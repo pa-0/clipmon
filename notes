@@ -1,0 +1,2 @@
+also x11 apps can steal each other's clipboard at any time, since the compositor is not involved in that
+  - emersion

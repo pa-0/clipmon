@@ -1,0 +1,11 @@
+[package]
+name = "clipmon"
+version = "0.1.0"
+authors = ["Hugo Osvaldo Barrera <hugo@barrera.io>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+wayland-client = "0.29.0"
+wayland-protocols = { version= "0.29.0", features= ["client", "unstable_protocols"]} 
