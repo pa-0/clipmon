@@ -1,9 +1,8 @@
 use std::cell::RefCell;
 use std::collections::HashSet;
-// use std::fs::File;
-// use std::os::unix::io::FromRawFd;
-// use std::os::unix::io::IntoRawFd;
-// use std::os::unix::io::RawFd;
+use std::fs::File;
+use std::io::Write;
+use std::os::unix::io::FromRawFd;
 use wayland_client::protocol::wl_seat::WlSeat;
 use wayland_client::DispatchData;
 use wayland_client::Display;
@@ -13,6 +12,8 @@ use wayland_protocols::wlr::unstable::data_control::v1::client::zwlr_data_contro
 use wayland_protocols::wlr::unstable::data_control::v1::client::zwlr_data_control_manager_v1::ZwlrDataControlManagerV1;
 use wayland_protocols::wlr::unstable::data_control::v1::client::zwlr_data_control_offer_v1;
 use wayland_protocols::wlr::unstable::data_control::v1::client::zwlr_data_control_offer_v1::ZwlrDataControlOfferV1;
+use wayland_protocols::wlr::unstable::data_control::v1::client::zwlr_data_control_source_v1;
+use wayland_protocols::wlr::unstable::data_control::v1::client::zwlr_data_control_source_v1::ZwlrDataControlSourceV1;
 
 #[derive(Debug)]
 pub struct ControlOfferUserData {
@@ -24,13 +25,17 @@ pub struct ControlOfferUserData {
 impl ControlOfferUserData {
     fn new() -> ControlOfferUserData {
         ControlOfferUserData {
-            mime_types: RefCell::new(HashSet::<String>::new()),
+            mime_types: RefCell::new(HashSet::new()),
             is_primary: RefCell::new(false),
             is_clipboard: RefCell::new(false),
         }
     }
 }
 
+// TODO: I probably want a SeatUserData to keep data_offers around.
+
+/// Handles events from the data_offer.
+/// These events describe the data being offered by an owner of the clipboard.
 fn handle_data_offer_events(
     main: Main<ZwlrDataControlOfferV1>,
     ev: zwlr_data_control_offer_v1::Event,
@@ -61,49 +66,45 @@ fn handle_data_offer_events(
     }
 }
 
-fn main() {
-    let display = Display::connect_to_env().unwrap();
-    let mut event_queue = display.create_event_queue();
-    let attached_display = (*display).clone().attach(event_queue.token());
-    let globals = GlobalManager::new(&attached_display);
-
-    // Make a synchronized roundtrip to the wayland server.
-    //
-    // When this returns it must be true that the server has already
-    // sent us all available globals.
-    event_queue
-        .sync_roundtrip(&mut (), |_, _, _| unreachable!())
-        .unwrap();
-
-    let seat = globals.instantiate_exact::<WlSeat>(1).unwrap();
-
-    // Once you have a seat, the compositor will send any events for this object.
-    // We don't really care about them, but if we don't handle them, they end
-    // up in the global event queue, which is messing to handle.
-    seat.quick_assign(|_main, event, _c| match event {
-        wayland_client::protocol::wl_seat::Event::Capabilities { capabilities } => {
-            eprint!("Capabilities: {:?}", capabilities)
+/// Handle events on the sources we create.
+fn handle_source_events(
+    _main: Main<ZwlrDataControlSourceV1>,
+    ev: zwlr_data_control_source_v1::Event,
+    _dispatch_data: DispatchData,
+) {
+    match ev {
+        // Someone is trying to paste a selection.
+        zwlr_data_control_source_v1::Event::Send { mime_type, fd } => {
+            println!("Someone asked us to send: {}", mime_type);
+            {
+                let mut file = unsafe { File::from_raw_fd(fd) };
+                match write!(file, "Helo!") {
+                    Ok(()) => {
+                        println!("sent clip!");
+                    }
+                    Err(err) => {
+                        eprintln!("error sending clip: {:?}!", err);
+                    }
+                };
+            }
         }
-        wayland_client::protocol::wl_seat::Event::Name { name } => {
-            eprint!("Seat name: {}", name)
+        // Our selection has been cancelled.
+        zwlr_data_control_source_v1::Event::Cancelled {} => {
+            println!("We've been cancelled");
         }
         _ => unreachable!(),
-    });
+    }
+}
 
-    event_queue
-        .sync_roundtrip(&mut (), |_, _, _| unreachable!())
-        .unwrap();
-
-    let manager = match globals.instantiate_exact::<ZwlrDataControlManagerV1>(2) {
-        Err(err) => {
-            eprintln!("Compositor doesn't support wlr-data-control-unstable-v1.");
-            panic!("{}", err);
-        }
-        Ok(res) => res,
-    };
-
-    let data_device = manager.get_data_device(&seat); // <<-- the thing I need to use.
-    data_device.quick_assign(|_main, ev, _dispatch_data| match ev {
+/// Handles events from the data_device.
+/// These events are basically new offers my clients that are taking ownership
+/// of the clipboard.
+fn handle_data_device_events(
+    _main: Main<zwlr_data_control_device_v1::ZwlrDataControlDeviceV1>, // XXX: wrong
+    ev: zwlr_data_control_device_v1::Event,
+    _dispatch_data: DispatchData,
+) {
+    match ev {
         zwlr_data_control_device_v1::Event::DataOffer { id: data_offer } => {
             // This means the offer is different from the previous one, and we can flush that
             // previous one.
@@ -120,36 +121,111 @@ fn main() {
             data_offer.quick_assign(handle_data_offer_events)
         }
         zwlr_data_control_device_v1::Event::Selection { id } => {
-            // CLIPBOARD selection
+            // CLIPBOARD selection (ctrl+c)
 
-            // This is sent AFTER the offers, and indicates that all the types and stuff are set.
-            // The id is that of the objet gotten via DataOffer.
+            // This is sent AFTER the offers, and indicates that all the mime types have been
+            // specified. The id is that of the objet gotten via DataOffer.
 
-            // The id can be null, which just expires the previous offer.
-            eprintln!("selection: {:?}", id);
+            let data_offer = match id.as_ref() {
+                Some(data_offer) => data_offer,
+                None => {
+                    // This should not really happen.
+                    // We copy clipboard data immediately, and then expose it ourselves, so
+                    // applications should seldom UNSET any selection.
+                    eprintln!("The CLIPBOARD selection has been dropped.");
+                    return;
+                }
+            };
+
+            let user_data = data_offer
+                .as_ref()
+                .user_data()
+                .get::<ControlOfferUserData>()
+                .unwrap();
+
+            user_data.is_clipboard.replace_with(|_| true);
+
+            // TODO: if this is null, expire the previous offer
+            eprintln!("selection: {:?}", data_offer);
         }
         zwlr_data_control_device_v1::Event::PrimarySelection { id } => {
-            // PRIMARY selection
-            // Same as above
+            // PRIMARY selection. Details are the same as above.
+
+            // TODO: if this is null, expire the previous offer
             eprintln!("primary: {:?}", id)
         }
-        zwlr_data_control_device_v1::Event::Finished => eprintln!("Finished"),
+        zwlr_data_control_device_v1::Event::Finished => {
+            // TODO: this offer is no longer valid. Drop it
+            eprintln!("Finished")
+        }
         _ => unreachable!(),
-    });
+    }
+}
 
-    println!("Data device: {:?}", data_device);
+fn main() {
+    let display = Display::connect_to_env().unwrap();
+    let mut event_queue = display.create_event_queue();
+    let attached_display = (*display).clone().attach(event_queue.token());
+    let globals = GlobalManager::new(&attached_display);
+
+    // Make a synchronized roundtrip to the wayland server.
+    //
+    // When this returns it must be true that the server has already
+    // sent us all available globals.
+    event_queue
+        .sync_roundtrip(&mut (), |_, _, _| unreachable!())
+        .unwrap();
+
+    let seat = match globals.instantiate_exact::<WlSeat>(1) {
+        Ok(main) => main,
+        Err(err) => {
+            eprintln!("Failed to get current seat.");
+            panic!("{}", err);
+        }
+    };
+
+    // Once we have a seat, the compositor sends a few events
+    // for it, but we don't really need them.
+    seat.quick_assign(|_, _, _| {});
+
+    event_queue
+        .sync_roundtrip(&mut (), |_, _, _| unreachable!())
+        .unwrap();
+
+    let manager = match globals.instantiate_exact::<ZwlrDataControlManagerV1>(2) {
+        Err(err) => {
+            eprintln!("Compositor doesn't support wlr-data-control-unstable-v1.");
+            panic!("{}", err);
+        }
+        Ok(res) => res,
+    };
+
+    let data_device = manager.get_data_device(&seat);
+    // This will set up handlers to listen to selection ("copy") events.
+    // It'll also handle the initially set selections.
+    data_device.quick_assign(handle_data_device_events);
+
+    // XXX: Testing. This aquires the CLIPBOARD selection.
+    let data_source = manager.create_data_source();
+    data_source.quick_assign(handle_source_events);
+    data_source.offer("text/plain".to_string());
+    data_source.offer("text/html".to_string());
+    data_device.set_selection(Some(&data_source));
+    // data_device.set_primary_selection(Some(&data_source));
+
+    event_queue
+        .sync_roundtrip(&mut (), |_, _, _| unreachable!())
+        .unwrap();
 
     loop {
-        // The dispatch() method returns once it has received some events to dispatch
-        // and have emptied the wayland socket from its pending messages, so it needs
-        // to be called in a loop. If this method returns an error, your connection to
-        // the wayland server is very likely dead. See its documentation for more details.
+        // If this method returns an error, the connection to
+        // the wayland server is very likely dead.
         event_queue
-            // There's a bug, and this event handler won't work anyway.
-            // Register explicitly handlers everywhere.
+            // We handle events for all object explicitly.
+            // This should never happen:
             .dispatch(&mut (), |raw_event, _main, _dispatch_data| {
-                eprintln!(
-                    "Unhandled / unexpected event: '{}.{}'.",
+                unreachable!(
+                    "Unexpected event: '{}.{}'.",
                     raw_event.interface, raw_event.name,
                 );
             })
