@@ -1,3 +1,9 @@
+mod pipe;
+
+use crate::pipe::read_offer;
+use calloop::EventLoop;
+use calloop::LoopSignal;
+use smithay_client_toolkit::WaylandSource;
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::fs::File;
@@ -39,14 +45,11 @@ impl ControlOfferUserData {
 fn handle_data_offer_events(
     main: Main<ZwlrDataControlOfferV1>,
     ev: zwlr_data_control_offer_v1::Event,
-    dispatch_data: DispatchData,
+    _dispatch_data: DispatchData,
 ) {
     match ev {
         zwlr_data_control_offer_v1::Event::Offer { mime_type } => {
-            println!(
-                "got offer {:?}, dispatch_data: {:?}",
-                mime_type, dispatch_data
-            );
+            println!("got offer {:?}", mime_type);
 
             // TODO: Report this crash upstream:
             //
@@ -68,7 +71,7 @@ fn handle_data_offer_events(
 
 /// Handle events on the sources we create.
 fn handle_source_events(
-    _main: Main<ZwlrDataControlSourceV1>,
+    data_source: Main<ZwlrDataControlSourceV1>,
     ev: zwlr_data_control_source_v1::Event,
     _dispatch_data: DispatchData,
 ) {
@@ -90,6 +93,8 @@ fn handle_source_events(
         }
         // Our selection has been cancelled.
         zwlr_data_control_source_v1::Event::Cancelled {} => {
+            // TODO: Drop any references to this.
+            data_source.destroy();
             println!("We've been cancelled");
         }
         _ => unreachable!(),
@@ -100,9 +105,8 @@ fn handle_source_events(
 /// These events are basically new offers my clients that are taking ownership
 /// of the clipboard.
 fn handle_data_device_events(
-    _main: Main<zwlr_data_control_device_v1::ZwlrDataControlDeviceV1>, // XXX: wrong
+    data_device: Main<zwlr_data_control_device_v1::ZwlrDataControlDeviceV1>,
     ev: zwlr_data_control_device_v1::Event,
-    _dispatch_data: DispatchData,
 ) {
     match ev {
         zwlr_data_control_device_v1::Event::DataOffer { id: data_offer } => {
@@ -145,17 +149,38 @@ fn handle_data_device_events(
 
             user_data.is_clipboard.replace_with(|_| true);
 
+            read_offer(data_offer.clone());
+
             // TODO: if this is null, expire the previous offer
             eprintln!("selection: {:?}", data_offer);
         }
         zwlr_data_control_device_v1::Event::PrimarySelection { id } => {
             // PRIMARY selection. Details are the same as above.
+            let data_offer = match id.as_ref() {
+                Some(data_offer) => data_offer,
+                None => {
+                    // This should not really happen.
+                    // We copy clipboard data immediately, and then expose it ourselves, so
+                    // applications should seldom UNSET any selection.
+                    eprintln!("The PRIMARY selection has been dropped.");
+                    return;
+                }
+            };
+
+            let user_data = data_offer
+                .as_ref()
+                .user_data()
+                .get::<ControlOfferUserData>()
+                .unwrap();
+
+            user_data.is_primary.replace_with(|_| true);
 
             // TODO: if this is null, expire the previous offer
             eprintln!("primary: {:?}", id)
         }
         zwlr_data_control_device_v1::Event::Finished => {
-            // TODO: this offer is no longer valid. Drop it
+            // TODO: Drop references to this object.
+            data_device.destroy();
             eprintln!("Finished")
         }
         _ => unreachable!(),
@@ -203,32 +228,46 @@ fn main() {
     let data_device = manager.get_data_device(&seat);
     // This will set up handlers to listen to selection ("copy") events.
     // It'll also handle the initially set selections.
-    data_device.quick_assign(handle_data_device_events);
+    data_device
+        .quick_assign(move |data_source, event, _| handle_data_device_events(data_source, event));
 
-    // XXX: Testing. This aquires the CLIPBOARD selection.
-    let data_source = manager.create_data_source();
-    data_source.quick_assign(handle_source_events);
-    data_source.offer("text/plain".to_string());
-    data_source.offer("text/html".to_string());
-    data_device.set_selection(Some(&data_source));
-    // data_device.set_primary_selection(Some(&data_source));
+    // // XXX: Testing. This aquires the CLIPBOARD selection.
+    // let data_source = manager.create_data_source();
+    // data_source.quick_assign(handle_source_events);
+    // data_source.offer("text/plain;charset=utf-8".to_string());
+    // data_source.offer("text/html".to_string());
+    // data_device.set_selection(Some(&data_source));
+    // // data_device.set_primary_selection(Some(&data_source));
 
-    event_queue
-        .sync_roundtrip(&mut (), |_, _, _| unreachable!())
+    let mut event_loop =
+        EventLoop::<LoopSignal>::try_new().expect("Failed to initialise the event loop!");
+
+    let handle = event_loop.handle();
+    let event_source = WaylandSource::new(event_queue);
+    event_source.quick_insert(handle).unwrap();
+
+    let mut shared_data = event_loop.get_signal();
+
+    event_loop
+        .run(
+            std::time::Duration::from_millis(0),
+            &mut shared_data,
+            |_| {},
+        )
         .unwrap();
 
-    loop {
-        // If this method returns an error, the connection to
-        // the wayland server is very likely dead.
-        event_queue
-            // We handle events for all object explicitly.
-            // This should never happen:
-            .dispatch(&mut (), |raw_event, _main, _dispatch_data| {
-                unreachable!(
-                    "Unexpected event: '{}.{}'.",
-                    raw_event.interface, raw_event.name,
-                );
-            })
-            .expect("An error occurred during event dispatching!");
-    }
+    // loop {
+    //     // If this method returns an error, the connection to
+    //     // the wayland server is very likely dead.
+    //     event_queue
+    //         // We handle events for all object explicitly.
+    //         // This should never happen:
+    //         .dispatch(&mut (), |raw_event, _main, _dispatch_data| {
+    //             unreachable!(
+    //                 "Unexpected event: '{}.{}'.",
+    //                 raw_event.interface, raw_event.name,
+    //             );
+    //         })
+    //         .expect("An error occurred during event dispatching!");
+    // }
 }
