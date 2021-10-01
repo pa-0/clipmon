@@ -108,7 +108,7 @@ fn handle_source_events(
 fn handle_data_device_events(
     data_device: Main<zwlr_data_control_device_v1::ZwlrDataControlDeviceV1>,
     ev: zwlr_data_control_device_v1::Event,
-    handle: LoopHandle<LoopSignal>,
+    handle: &LoopHandle<LoopSignal>,
 ) {
     match ev {
         zwlr_data_control_device_v1::Event::DataOffer { id: data_offer } => {
@@ -151,7 +151,7 @@ fn handle_data_device_events(
 
             user_data.is_clipboard.replace_with(|_| true);
 
-            read_offer(data_offer.clone());
+            read_offer(&data_offer, handle);
 
             // TODO: if this is null, expire the previous offer
             eprintln!("selection: {:?}", data_offer);
@@ -225,13 +225,12 @@ fn main() {
         }
         Ok(res) => res,
     };
+
     //----------------------------------------
     let mut event_loop =
         EventLoop::<LoopSignal>::try_new().expect("Failed to initialise the event loop!");
 
     let handle = event_loop.handle();
-    let event_source = WaylandSource::new(event_queue);
-    event_source.quick_insert(handle).unwrap();
     //----------------------------------------
 
     let data_device = manager.get_data_device(&seat);
@@ -239,8 +238,16 @@ fn main() {
     // It'll also handle the initially set selections.
     let cloned_handle = event_loop.handle();
     data_device.quick_assign(move |data_source, event, _| {
-        handle_data_device_events(data_source, event, cloned_handle)
+        handle_data_device_events(data_source, event, &cloned_handle)
     });
+
+    event_queue
+        .sync_roundtrip(&mut (), |_, _, _| unreachable!())
+        .unwrap();
+
+    event_queue
+        .sync_roundtrip(&mut (), |_, _, _| unreachable!())
+        .unwrap();
 
     // // XXX: Testing. This aquires the CLIPBOARD selection.
     // let data_source = manager.create_data_source();
@@ -250,28 +257,16 @@ fn main() {
     // data_device.set_selection(Some(&data_source));
     // // data_device.set_primary_selection(Some(&data_source));
 
+    let event_source = WaylandSource::new(event_queue);
+    event_source.quick_insert(handle).unwrap();
     let mut shared_data = event_loop.get_signal();
 
+    println!("The loop will now start");
     event_loop
         .run(
-            std::time::Duration::from_millis(0),
+            std::time::Duration::from_millis(1),
             &mut shared_data,
             |_| {},
         )
-        .unwrap();
-
-    // loop {
-    //     // If this method returns an error, the connection to
-    //     // the wayland server is very likely dead.
-    //     event_queue
-    //         // We handle events for all object explicitly.
-    //         // This should never happen:
-    //         .dispatch(&mut (), |raw_event, _main, _dispatch_data| {
-    //             unreachable!(
-    //                 "Unexpected event: '{}.{}'.",
-    //                 raw_event.interface, raw_event.name,
-    //             );
-    //         })
-    //         .expect("An error occurred during event dispatching!");
-    // }
+        .expect("An error occurred during the event loop!");
 }
