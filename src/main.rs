@@ -2,6 +2,7 @@ mod pipe;
 
 use crate::pipe::read_offer;
 use calloop::EventLoop;
+use calloop::LoopHandle;
 use calloop::LoopSignal;
 use smithay_client_toolkit::WaylandSource;
 use std::cell::RefCell;
@@ -107,6 +108,7 @@ fn handle_source_events(
 fn handle_data_device_events(
     data_device: Main<zwlr_data_control_device_v1::ZwlrDataControlDeviceV1>,
     ev: zwlr_data_control_device_v1::Event,
+    handle: LoopHandle<LoopSignal>,
 ) {
     match ev {
         zwlr_data_control_device_v1::Event::DataOffer { id: data_offer } => {
@@ -209,8 +211,7 @@ fn main() {
         }
     };
 
-    // Once we have a seat, the compositor sends a few events
-    // for it, but we don't really need them.
+    // Once we have a seat, the compositor events for it, but we don't really need them.
     seat.quick_assign(|_, _, _| {});
 
     event_queue
@@ -224,12 +225,22 @@ fn main() {
         }
         Ok(res) => res,
     };
+    //----------------------------------------
+    let mut event_loop =
+        EventLoop::<LoopSignal>::try_new().expect("Failed to initialise the event loop!");
+
+    let handle = event_loop.handle();
+    let event_source = WaylandSource::new(event_queue);
+    event_source.quick_insert(handle).unwrap();
+    //----------------------------------------
 
     let data_device = manager.get_data_device(&seat);
     // This will set up handlers to listen to selection ("copy") events.
     // It'll also handle the initially set selections.
-    data_device
-        .quick_assign(move |data_source, event, _| handle_data_device_events(data_source, event));
+    let cloned_handle = event_loop.handle();
+    data_device.quick_assign(move |data_source, event, _| {
+        handle_data_device_events(data_source, event, cloned_handle)
+    });
 
     // // XXX: Testing. This aquires the CLIPBOARD selection.
     // let data_source = manager.create_data_source();
@@ -238,13 +249,6 @@ fn main() {
     // data_source.offer("text/html".to_string());
     // data_device.set_selection(Some(&data_source));
     // // data_device.set_primary_selection(Some(&data_source));
-
-    let mut event_loop =
-        EventLoop::<LoopSignal>::try_new().expect("Failed to initialise the event loop!");
-
-    let handle = event_loop.handle();
-    let event_source = WaylandSource::new(event_queue);
-    event_source.quick_insert(handle).unwrap();
 
     let mut shared_data = event_loop.get_signal();
 
