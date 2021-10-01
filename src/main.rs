@@ -6,10 +6,11 @@ use calloop::LoopHandle;
 use calloop::LoopSignal;
 use smithay_client_toolkit::WaylandSource;
 use std::cell::RefCell;
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
 use std::os::unix::io::FromRawFd;
+use std::rc::Rc;
 use wayland_client::protocol::wl_seat::WlSeat;
 use wayland_client::DispatchData;
 use wayland_client::Display;
@@ -24,7 +25,7 @@ use wayland_protocols::wlr::unstable::data_control::v1::client::zwlr_data_contro
 
 #[derive(Debug)]
 pub struct ControlOfferUserData {
-    mime_types: RefCell<HashSet<String>>,
+    mime_types: Rc<RefCell<HashMap<String, Option<Vec<u8>>>>>,
     is_primary: RefCell<bool>,
     is_clipboard: RefCell<bool>,
 }
@@ -32,7 +33,7 @@ pub struct ControlOfferUserData {
 impl ControlOfferUserData {
     fn new() -> ControlOfferUserData {
         ControlOfferUserData {
-            mime_types: RefCell::new(HashSet::new()),
+            mime_types: Rc::new(RefCell::new(HashMap::new())),
             is_primary: RefCell::new(false),
             is_clipboard: RefCell::new(false),
         }
@@ -64,7 +65,7 @@ fn handle_data_offer_events(
                 .get::<ControlOfferUserData>()
                 .unwrap();
 
-            user_data.mime_types.borrow_mut().insert(mime_type);
+            user_data.mime_types.borrow_mut().insert(mime_type, None);
         }
         _ => unreachable!(),
     }
