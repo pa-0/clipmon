@@ -210,9 +210,7 @@ fn main() {
             panic!("{}", err);
         }
     };
-
-    // Once we have a seat, the compositor events for it, but we don't really need them.
-    seat.quick_assign(|_, _, _| {});
+    seat.quick_assign(|_, _, _| {}); // Ignore all events for the seat.
 
     event_queue
         .sync_roundtrip(&mut (), |_, _, _| unreachable!())
@@ -226,42 +224,29 @@ fn main() {
         Ok(res) => res,
     };
 
-    //----------------------------------------
     let mut event_loop =
-        EventLoop::<LoopSignal>::try_new().expect("Failed to initialise the event loop!");
-
-    let handle = event_loop.handle();
-    //----------------------------------------
+        EventLoop::<LoopSignal>::try_new().expect("Failed to initialise event loop.");
 
     let data_device = manager.get_data_device(&seat);
     // This will set up handlers to listen to selection ("copy") events.
     // It'll also handle the initially set selections.
-    let cloned_handle = event_loop.handle();
+    let handle = event_loop.handle();
     data_device.quick_assign(move |data_source, event, _| {
-        handle_data_device_events(data_source, event, &cloned_handle)
+        handle_data_device_events(data_source, event, &handle)
     });
 
-    event_queue
-        .sync_roundtrip(&mut (), |_, _, _| unreachable!())
+    // Send all pending messages to the compositor.
+    // Doesn't fetch events -- we'll get those after the event loop starts.
+    display
+        .flush()
+        .expect("Failed to send initialisation to compositor");
+
+    WaylandSource::new(event_queue)
+        .quick_insert(event_loop.handle())
         .unwrap();
-
-    event_queue
-        .sync_roundtrip(&mut (), |_, _, _| unreachable!())
-        .unwrap();
-
-    // // XXX: Testing. This aquires the CLIPBOARD selection.
-    // let data_source = manager.create_data_source();
-    // data_source.quick_assign(handle_source_events);
-    // data_source.offer("text/plain;charset=utf-8".to_string());
-    // data_source.offer("text/html".to_string());
-    // data_device.set_selection(Some(&data_source));
-    // // data_device.set_primary_selection(Some(&data_source));
-
-    let event_source = WaylandSource::new(event_queue);
-    event_source.quick_insert(handle).unwrap();
     let mut shared_data = event_loop.get_signal();
 
-    println!("The loop will now start");
+    println!("Starting event loop...");
     event_loop
         .run(
             std::time::Duration::from_millis(1),
@@ -270,3 +255,11 @@ fn main() {
         )
         .expect("An error occurred during the event loop!");
 }
+
+// // XXX: Testing. This aquires the CLIPBOARD selection.
+// let data_source = manager.create_data_source();
+// data_source.quick_assign(handle_source_events);
+// data_source.offer("text/plain;charset=utf-8".to_string());
+// data_source.offer("text/html".to_string());
+// data_device.set_selection(Some(&data_source));
+// // data_device.set_primary_selection(Some(&data_source));
