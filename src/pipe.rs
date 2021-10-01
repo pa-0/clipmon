@@ -1,4 +1,4 @@
-use crate::ControlOfferUserData;
+use crate::DataOffer;
 use calloop::generic::Generic;
 use calloop::Interest;
 use calloop::LoopHandle;
@@ -14,7 +14,7 @@ pub fn read_offer(data_offer: &ZwlrDataControlOfferV1, handle: &LoopHandle<LoopS
     // let user_data = match data_offer
     //     .as_ref()
     //     .user_data()
-    //     .get::<ControlOfferUserData>()
+    //     .get::<DataOffer>()
     // {
     //     Some(data) => data,
     //     None => {
@@ -25,7 +25,7 @@ pub fn read_offer(data_offer: &ZwlrDataControlOfferV1, handle: &LoopHandle<LoopS
     let user_data = data_offer
         .as_ref()
         .user_data()
-        .get::<ControlOfferUserData>()
+        .get::<DataOffer>()
         .unwrap();
 
     for (mime_type, _) in user_data.mime_types.borrow().iter() {

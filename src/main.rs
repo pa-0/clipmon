@@ -24,15 +24,15 @@ use wayland_protocols::wlr::unstable::data_control::v1::client::zwlr_data_contro
 use wayland_protocols::wlr::unstable::data_control::v1::client::zwlr_data_control_source_v1::ZwlrDataControlSourceV1;
 
 #[derive(Debug)]
-pub struct ControlOfferUserData {
+pub struct DataOffer {
     mime_types: Rc<RefCell<HashMap<String, Option<Vec<u8>>>>>,
     is_primary: RefCell<bool>,
     is_clipboard: RefCell<bool>,
 }
 
-impl ControlOfferUserData {
-    fn new() -> ControlOfferUserData {
-        ControlOfferUserData {
+impl DataOffer {
+    fn new() -> DataOffer {
+        DataOffer {
             mime_types: Rc::new(RefCell::new(HashMap::new())),
             is_primary: RefCell::new(false),
             is_clipboard: RefCell::new(false),
@@ -62,7 +62,7 @@ fn handle_data_offer_events(
             let user_data = main
                 .as_ref()
                 .user_data()
-                .get::<ControlOfferUserData>()
+                .get::<DataOffer>()
                 .unwrap();
 
             user_data.mime_types.borrow_mut().insert(mime_type, None);
@@ -124,7 +124,7 @@ fn handle_data_device_events(
             data_offer
                 .as_ref()
                 .user_data()
-                .set(move || ControlOfferUserData::new());
+                .set(move || DataOffer::new());
             data_offer.quick_assign(handle_data_offer_events)
         }
         zwlr_data_control_device_v1::Event::Selection { id } => {
@@ -147,7 +147,7 @@ fn handle_data_device_events(
             let user_data = data_offer
                 .as_ref()
                 .user_data()
-                .get::<ControlOfferUserData>()
+                .get::<DataOffer>()
                 .unwrap();
 
             user_data.is_clipboard.replace_with(|_| true);
@@ -173,7 +173,7 @@ fn handle_data_device_events(
             let user_data = data_offer
                 .as_ref()
                 .user_data()
-                .get::<ControlOfferUserData>()
+                .get::<DataOffer>()
                 .unwrap();
 
             user_data.is_primary.replace_with(|_| true);
