@@ -78,12 +78,13 @@ impl LoopData {
         match selection {
             Selection::Primary => {
                 self.primary.replace(Some(Rc::clone(data)));
+                self.device.set_primary_selection(Some(source));
             }
             Selection::Clipboard => {
                 self.clipboard.replace(Some(Rc::clone(data)));
+                self.device.set_selection(Some(source));
             }
         }
-        self.device.set_primary_selection(Some(source));
         println!("selection taken: {:?}!", selection);
     }
 
