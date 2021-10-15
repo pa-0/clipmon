@@ -11,6 +11,10 @@ clipmon
   selection. This is what you'd expect to happen on a modern desktop, but tools
   to achieve this only existed for Xorg. _[In beta]_
 
+# Build
+
+To build use `cargo build`. You can also quickly run this with `cargo run`.
+
 # Caveats
 
 In order to keep clipboard selections, `clipmon` needs to read any selection
