@@ -88,7 +88,7 @@ fn create_data_source(loop_data: &mut LoopData, mime_types: &MimeTypes, selectio
     data_source.quick_assign(handle_source_event);
 
     for (mime_type, _) in mime_types.borrow().iter() {
-        data_source.offer(mime_type.to_string());
+        data_source.offer(mime_type.clone());
     }
 
     loop_data.take_selection(*selection, mime_types, &data_source); // Race condition??
@@ -110,7 +110,7 @@ fn handle_pipe_event(
     // Save the read value into our user data.
     mime_types
         .borrow_mut()
-        .insert(mime_type.to_string(), Some(buf));
+        .insert(mime_type.clone(), Some(buf));
 
     // Check if we've already copied all mime types...
     if !mime_types.borrow().iter().any(|(_, value)| {
@@ -141,7 +141,7 @@ pub fn read_offer(
                 continue;
             }
         };
-        data_offer.receive(mime_type.to_string(), writer.as_raw_fd());
+        data_offer.receive(mime_type.clone(), writer.as_raw_fd());
         drop(writer); // We won't write anything, the selection client will.
 
         let source = Generic::new(reader, Interest::READ, Mode::Edge);
