@@ -176,7 +176,7 @@ fn handle_selection_taken(
     let user_data = data_offer.as_ref().user_data().get::<DataOffer>().unwrap();
     user_data.selection.replace(Some(selection));
 
-    read_offer(&data_offer, handle);
+    read_offer(&data_offer, handle, &user_data);
 
     eprintln!("selection: {:?}", data_offer);
 }
@@ -185,7 +185,7 @@ fn handle_selection_taken(
 /// These events are basically new offers my clients that are taking ownership
 /// of the clipboard.
 fn handle_data_device_events(
-    data_device: Main<zwlr_data_control_device_v1::ZwlrDataControlDeviceV1>,
+    data_device: Main<ZwlrDataControlDeviceV1>,
     ev: zwlr_data_control_device_v1::Event,
     loop_data: &mut LoopData,
     handle: &LoopHandle<LoopData>,
@@ -207,18 +207,14 @@ fn handle_data_device_events(
             data_offer.quick_assign(handle_data_offer_events)
         }
         zwlr_data_control_device_v1::Event::Selection { id } => {
-            // CLIPBOARD selection (ctrl+c)
             handle_selection_taken(id, Selection::Clipboard, loop_data, handle);
         }
         zwlr_data_control_device_v1::Event::PrimarySelection { id } => {
-            // PRIMARY selection. Details are the same as above.
             handle_selection_taken(id, Selection::Primary, loop_data, handle);
         }
         zwlr_data_control_device_v1::Event::Finished => {
-            // TODO: Drop references to this object.
             data_device.destroy();
             // XXX: What happens if we're still reading here...?
-            eprintln!("Finished")
         }
         _ => unreachable!(),
     }

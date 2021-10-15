@@ -21,13 +21,6 @@ use wayland_protocols::wlr::unstable::data_control::v1::client::zwlr_data_contro
 use wayland_protocols::wlr::unstable::data_control::v1::client::zwlr_data_control_source_v1;
 use wayland_protocols::wlr::unstable::data_control::v1::client::zwlr_data_control_source_v1::ZwlrDataControlSourceV1;
 
-#[derive(Debug)]
-pub struct Source<'a> {
-    mime_types: &'a MimeTypes,
-    data_source: Main<ZwlrDataControlSourceV1>,
-    selection: Selection,
-}
-
 fn handle_source_event(
     main: Main<ZwlrDataControlSourceV1>,
     event: zwlr_data_control_source_v1::Event,
@@ -75,8 +68,7 @@ fn handle_source_event(
                 Ok(x) => println!("{:?}", x),
                 Err(err) => println!("{:?}", err),
             }
-            drop(file); // just close for now.
-                        // TODO
+            drop(file);
         }
         zwlr_data_control_source_v1::Event::Cancelled {} => {
             let selection = main.as_ref().user_data().get::<Selection>().unwrap();
@@ -86,7 +78,6 @@ fn handle_source_event(
         }
         _ => unreachable!(),
     }
-    // TODO
 }
 
 fn create_data_source(loop_data: &mut LoopData, mime_types: &MimeTypes, selection: &Selection) {
@@ -105,26 +96,28 @@ fn create_data_source(loop_data: &mut LoopData, mime_types: &MimeTypes, selectio
 
 fn handle_pipe_event(
     reader: &mut PipeReader,
-    id: u32,
     mime_type: &String,
     mime_types: &MimeTypes,
-    data: &mut LoopData,
+    loop_data: &mut LoopData,
     selection: &Selection,
 ) -> Result<PostAction, std::io::Error> {
     let mut reader = std::io::BufReader::new(reader);
     let mut buf = Vec::<u8>::new();
     let len = reader.read_to_end(&mut buf)?;
 
-    println!("read data_offer: {:?}/{}: {:?} bytes", id, mime_type, len);
+    println!("read data_offer: {}: {:?} bytes", mime_type, len);
 
     // Save the read value into our user data.
-    mime_types.borrow_mut().insert(mime_type.clone(), Some(buf));
+    mime_types
+        .borrow_mut()
+        .insert(mime_type.to_string(), Some(buf));
 
     // Check if we've already copied all mime types...
     if !mime_types.borrow().iter().any(|(_, value)| {
         return value.is_none();
     }) {
-        create_data_source(data, mime_types, &selection);
+        // XXX: What if the selection changed during the pipe-read?
+        create_data_source(loop_data, mime_types, &selection);
     }
 
     // Given that we've read all the data, no need to continue
@@ -132,20 +125,14 @@ fn handle_pipe_event(
     return Result::Ok(PostAction::Remove);
 }
 
-pub fn read_offer(data_offer: &ZwlrDataControlOfferV1, handle: &LoopHandle<LoopData>) {
-    let user_data = match data_offer
-        .as_ref()
-        .user_data()
-        .get::<DataOffer>() // XXX: It might make sense for this to be RC...
-    {
-        Some(data) => data,
-        None => {
-            println!("We're missing data for this offer! o.O");
-            return;
-        }
-    };
-    // XXX ... so i can clone a reference and pass that to the inner handler
-
+pub fn read_offer(
+    data_offer: &ZwlrDataControlOfferV1,
+    handle: &LoopHandle<LoopData>,
+    user_data: &DataOffer,
+) {
+    // TODO: I might want to be smart about some types here.
+    // "UTF8_STRING" and "text/plain;charset=utf-8" should be the same, so
+    // copying just one might suffice.
     for (mime_type, _) in user_data.mime_types.borrow().iter() {
         let (reader, writer) = match os_pipe::pipe() {
             Ok((reader, writer)) => (reader, writer),
@@ -155,17 +142,15 @@ pub fn read_offer(data_offer: &ZwlrDataControlOfferV1, handle: &LoopHandle<LoopD
             }
         };
         data_offer.receive(mime_type.to_string(), writer.as_raw_fd());
-        drop(writer);
+        drop(writer); // We won't write anything, the selection client will.
 
         let source = Generic::new(reader, Interest::READ, Mode::Edge);
-
-        let id = data_offer.as_ref().id().clone();
         let mime_type = mime_type.clone();
         let mime_types = Rc::clone(&user_data.mime_types);
         let selection = user_data.selection.borrow().unwrap();
 
         match handle.insert_source(source, move |_event, reader, data| {
-            return handle_pipe_event(reader, id, &mime_type, &mime_types, data, &selection);
+            return handle_pipe_event(reader, &mime_type, &mime_types, data, &selection);
         }) {
             Ok(_) => {}
             Err(err) => println!("Error setting handler for pipe: {:?}", err),
