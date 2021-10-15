@@ -85,11 +85,9 @@ impl LoopData {
                 self.device.set_selection(Some(source));
             }
         }
-        println!("selection taken: {:?}!", selection);
     }
 
     fn selection_lost(&self, selection: Selection) {
-        println!("selection lost: {:?}", selection);
         match selection {
             Selection::Primary => {
                 self.primary.replace(None);
@@ -101,12 +99,10 @@ impl LoopData {
     }
 
     fn is_selection_ours(&self, selection: Selection) -> bool {
-        let res = match selection {
+        return match selection {
             Selection::Primary => self.primary.borrow().is_some(),
             Selection::Clipboard => self.clipboard.borrow().is_some(),
         };
-        println!("checked if we own: {:?}: {:?}", selection, res);
-        return res;
     }
 
     fn get_selection_data(&self, selection: Selection) -> Option<MimeTypes> {
@@ -178,7 +174,7 @@ fn handle_selection_taken(
 
     read_offer(&data_offer, handle, &user_data);
 
-    eprintln!("selection: {:?}", data_offer);
+    eprintln!("Selection taken by client: {:?}.", selection);
 }
 
 /// Handles events from the data_device.
@@ -272,6 +268,9 @@ fn main() {
     display
         .flush()
         .expect("Failed to send initialisation to the compositor.");
+
+    // TODO: create a speical source for showing notifications.
+    // TODO: trigger a notification on paste.
 
     WaylandSource::new(event_queue)
         .quick_insert(event_loop.handle())

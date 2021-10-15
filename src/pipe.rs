@@ -26,7 +26,6 @@ fn handle_source_event(
     event: zwlr_data_control_source_v1::Event,
     mut data: DispatchData,
 ) {
-    println!("data_source event...{:?},{:?}", main, event);
     let loop_data = data.get::<LoopData>().unwrap();
     match event {
         zwlr_data_control_source_v1::Event::Send { mime_type, fd } => {
@@ -65,10 +64,9 @@ fn handle_source_event(
 
             let r = file.write(typed_data);
             match r {
-                Ok(x) => println!("{:?}", x),
-                Err(err) => println!("{:?}", err),
+                Ok(x) => println!("Sent {} bytes", x),
+                Err(err) => println!("Error sending selection: {:?}", err),
             }
-            drop(file);
         }
         zwlr_data_control_source_v1::Event::Cancelled {} => {
             let selection = main.as_ref().user_data().get::<Selection>().unwrap();
@@ -82,9 +80,11 @@ fn handle_source_event(
 
 fn create_data_source(loop_data: &mut LoopData, mime_types: &MimeTypes, selection: &Selection) {
     let data_source = loop_data.manager.create_data_source();
+    // Pass the selection since this source needs to know what to send:
+    // XXX: Does it make more sense to pass the selection data itself?
     data_source.as_ref().user_data().set(move || *selection);
 
-    println!("-> created data source {:?}", data_source);
+    println!("Created own data source: {:?}.", data_source);
     data_source.quick_assign(handle_source_event);
 
     for (mime_type, _) in mime_types.borrow().iter() {
@@ -92,6 +92,7 @@ fn create_data_source(loop_data: &mut LoopData, mime_types: &MimeTypes, selectio
     }
 
     loop_data.take_selection(*selection, mime_types, &data_source); // Race condition??
+    println!("Selection taken by us: {:?}.", selection);
 }
 
 fn handle_pipe_event(
@@ -108,9 +109,7 @@ fn handle_pipe_event(
     println!("read data_offer: {}: {:?} bytes", mime_type, len);
 
     // Save the read value into our user data.
-    mime_types
-        .borrow_mut()
-        .insert(mime_type.clone(), Some(buf));
+    mime_types.borrow_mut().insert(mime_type.clone(), Some(buf));
 
     // Check if we've already copied all mime types...
     if !mime_types.borrow().iter().any(|(_, value)| {
