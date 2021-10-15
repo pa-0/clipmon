@@ -7,9 +7,6 @@ use calloop::LoopSignal;
 use smithay_client_toolkit::WaylandSource;
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::Write;
-use std::os::unix::io::FromRawFd;
 use std::rc::Rc;
 use wayland_client::protocol::wl_seat::WlSeat;
 use wayland_client::DispatchData;
@@ -17,30 +14,112 @@ use wayland_client::Display;
 use wayland_client::GlobalManager;
 use wayland_client::Main;
 use wayland_protocols::wlr::unstable::data_control::v1::client::zwlr_data_control_device_v1;
+use wayland_protocols::wlr::unstable::data_control::v1::client::zwlr_data_control_device_v1::ZwlrDataControlDeviceV1;
 use wayland_protocols::wlr::unstable::data_control::v1::client::zwlr_data_control_manager_v1::ZwlrDataControlManagerV1;
 use wayland_protocols::wlr::unstable::data_control::v1::client::zwlr_data_control_offer_v1;
 use wayland_protocols::wlr::unstable::data_control::v1::client::zwlr_data_control_offer_v1::ZwlrDataControlOfferV1;
-use wayland_protocols::wlr::unstable::data_control::v1::client::zwlr_data_control_source_v1;
 use wayland_protocols::wlr::unstable::data_control::v1::client::zwlr_data_control_source_v1::ZwlrDataControlSourceV1;
+
+// TODO: It's possible that "Cell" works here too...?
+// TODO: rename to someting a bit more sensible.
+type MimeTypes = Rc<RefCell<HashMap<String, Option<Vec<u8>>>>>;
+
+#[derive(Debug, Clone, Copy)]
+enum Selection {
+    Primary,   // Selected text.
+    Clipboard, // Ctrl+C.
+}
 
 #[derive(Debug)]
 pub struct DataOffer {
-    mime_types: Rc<RefCell<HashMap<String, Option<Vec<u8>>>>>,
-    is_primary: RefCell<bool>,
-    is_clipboard: RefCell<bool>,
+    mime_types: MimeTypes,
+    selection: RefCell<Option<Selection>>,
 }
 
 impl DataOffer {
     fn new() -> DataOffer {
         DataOffer {
             mime_types: Rc::new(RefCell::new(HashMap::new())),
-            is_primary: RefCell::new(false),
-            is_clipboard: RefCell::new(false),
+            selection: RefCell::new(None),
         }
     }
 }
 
-// TODO: I probably want a SeatUserData to keep data_offers around.
+#[derive(Debug)]
+pub struct LoopData {
+    signal: LoopSignal,
+    manager: Main<ZwlrDataControlManagerV1>,
+    device: Main<ZwlrDataControlDeviceV1>,
+    primary: RefCell<Option<MimeTypes>>,
+    clipboard: RefCell<Option<MimeTypes>>,
+}
+
+impl LoopData {
+    fn new(
+        signal: LoopSignal,
+        manager: Main<ZwlrDataControlManagerV1>,
+        device: Main<ZwlrDataControlDeviceV1>,
+    ) -> LoopData {
+        return LoopData {
+            signal,
+            manager,
+            device,
+            primary: RefCell::new(None),
+            clipboard: RefCell::new(None),
+        };
+    }
+
+    fn take_selection(
+        &self,
+        selection: Selection,
+        data: &MimeTypes,
+        source: &ZwlrDataControlSourceV1,
+    ) {
+        match selection {
+            Selection::Primary => {
+                self.primary.replace(Some(Rc::clone(data)));
+            }
+            Selection::Clipboard => {
+                self.clipboard.replace(Some(Rc::clone(data)));
+            }
+        }
+        self.device.set_primary_selection(Some(source));
+        println!("selection taken: {:?}!", selection);
+    }
+
+    fn selection_lost(&self, selection: Selection) {
+        println!("selection lost: {:?}", selection);
+        match selection {
+            Selection::Primary => {
+                self.primary.replace(None);
+            }
+            Selection::Clipboard => {
+                self.clipboard.replace(None);
+            }
+        }
+    }
+
+    fn is_selection_ours(&self, selection: Selection) -> bool {
+        let res = match selection {
+            Selection::Primary => self.primary.borrow().is_some(),
+            Selection::Clipboard => self.clipboard.borrow().is_some(),
+        };
+        println!("checked if we own: {:?}: {:?}", selection, res);
+        return res;
+    }
+
+    fn get_selection_data(&self, selection: Selection) -> Option<MimeTypes> {
+        let mime_types = match selection {
+            Selection::Primary => &self.primary,
+            Selection::Clipboard => &self.clipboard,
+        };
+
+        return match mime_types.borrow().as_ref() {
+            Some(data) => Some(Rc::clone(data)),
+            None => None,
+        };
+    }
+}
 
 /// Handles events from the data_offer.
 /// These events describe the data being offered by an owner of the clipboard.
@@ -59,11 +138,7 @@ fn handle_data_offer_events(
             // If the selection comes from alacritty it works.
             // If the selection comes from firefox it doesn't.
 
-            let user_data = main
-                .as_ref()
-                .user_data()
-                .get::<DataOffer>()
-                .unwrap();
+            let user_data = main.as_ref().user_data().get::<DataOffer>().unwrap();
 
             user_data.mime_types.borrow_mut().insert(mime_type, None);
         }
@@ -71,36 +146,38 @@ fn handle_data_offer_events(
     }
 }
 
-/// Handle events on the sources we create.
-fn handle_source_events(
-    data_source: Main<ZwlrDataControlSourceV1>,
-    ev: zwlr_data_control_source_v1::Event,
-    _dispatch_data: DispatchData,
+// Handle a selection being taken by another client.
+fn handle_selection_taken(
+    id: Option<ZwlrDataControlOfferV1>,
+    selection: Selection,
+    loop_data: &mut LoopData,
+    handle: &LoopHandle<LoopData>,
 ) {
-    match ev {
-        // Someone is trying to paste a selection.
-        zwlr_data_control_source_v1::Event::Send { mime_type, fd } => {
-            println!("Someone asked us to send: {}", mime_type);
-            {
-                let mut file = unsafe { File::from_raw_fd(fd) };
-                match write!(file, "Helo!") {
-                    Ok(()) => {
-                        println!("sent clip!");
-                    }
-                    Err(err) => {
-                        eprintln!("error sending clip: {:?}!", err);
-                    }
-                };
-            }
-        }
-        // Our selection has been cancelled.
-        zwlr_data_control_source_v1::Event::Cancelled {} => {
-            // TODO: Drop any references to this.
-            data_source.destroy();
-            println!("We've been cancelled");
-        }
-        _ => unreachable!(),
+    if loop_data.is_selection_ours(selection) {
+        println!("I have {:?}, escaping", selection);
+        return;
     }
+
+    // This is sent AFTER the offers, and indicates that all the mime types have been
+    // specified. The id is that of the objet gotten via DataOffer.
+
+    let data_offer = match id.as_ref() {
+        Some(data_offer) => data_offer,
+        None => {
+            // This should not really happen.
+            // We copy clipboard data immediately, and then expose it ourselves, so
+            // applications should seldom UNSET any selection.
+            eprintln!("The {:?} selection has been dropped.", selection);
+            return;
+        }
+    };
+
+    let user_data = data_offer.as_ref().user_data().get::<DataOffer>().unwrap();
+    user_data.selection.replace(Some(selection));
+
+    read_offer(&data_offer, handle);
+
+    eprintln!("selection: {:?}", data_offer);
 }
 
 /// Handles events from the data_device.
@@ -109,7 +186,8 @@ fn handle_source_events(
 fn handle_data_device_events(
     data_device: Main<zwlr_data_control_device_v1::ZwlrDataControlDeviceV1>,
     ev: zwlr_data_control_device_v1::Event,
-    handle: &LoopHandle<LoopSignal>,
+    loop_data: &mut LoopData,
+    handle: &LoopHandle<LoopData>,
 ) {
     match ev {
         zwlr_data_control_device_v1::Event::DataOffer { id: data_offer } => {
@@ -129,61 +207,16 @@ fn handle_data_device_events(
         }
         zwlr_data_control_device_v1::Event::Selection { id } => {
             // CLIPBOARD selection (ctrl+c)
-
-            // This is sent AFTER the offers, and indicates that all the mime types have been
-            // specified. The id is that of the objet gotten via DataOffer.
-
-            let data_offer = match id.as_ref() {
-                Some(data_offer) => data_offer,
-                None => {
-                    // This should not really happen.
-                    // We copy clipboard data immediately, and then expose it ourselves, so
-                    // applications should seldom UNSET any selection.
-                    eprintln!("The CLIPBOARD selection has been dropped.");
-                    return;
-                }
-            };
-
-            let user_data = data_offer
-                .as_ref()
-                .user_data()
-                .get::<DataOffer>()
-                .unwrap();
-
-            user_data.is_clipboard.replace_with(|_| true);
-
-            read_offer(&data_offer, handle);
-
-            // TODO: if this is null, expire the previous offer
-            eprintln!("selection: {:?}", data_offer);
+            handle_selection_taken(id, Selection::Clipboard, loop_data, handle);
         }
         zwlr_data_control_device_v1::Event::PrimarySelection { id } => {
             // PRIMARY selection. Details are the same as above.
-            let data_offer = match id.as_ref() {
-                Some(data_offer) => data_offer,
-                None => {
-                    // This should not really happen.
-                    // We copy clipboard data immediately, and then expose it ourselves, so
-                    // applications should seldom UNSET any selection.
-                    eprintln!("The PRIMARY selection has been dropped.");
-                    return;
-                }
-            };
-
-            let user_data = data_offer
-                .as_ref()
-                .user_data()
-                .get::<DataOffer>()
-                .unwrap();
-
-            user_data.is_primary.replace_with(|_| true);
-
-            // TODO: if this is null, expire the previous offer
-            eprintln!("primary: {:?}", id)
+            handle_selection_taken(id, Selection::Primary, loop_data, handle);
         }
         zwlr_data_control_device_v1::Event::Finished => {
             // TODO: Drop references to this object.
             data_device.destroy();
+            // XXX: What happens if we're still reading here...?
             eprintln!("Finished")
         }
         _ => unreachable!(),
@@ -226,41 +259,33 @@ fn main() {
     };
 
     let mut event_loop =
-        EventLoop::<LoopSignal>::try_new().expect("Failed to initialise event loop.");
+        EventLoop::<LoopData>::try_new().expect("Failed to initialise event loop.");
 
     let data_device = manager.get_data_device(&seat);
     // This will set up handlers to listen to selection ("copy") events.
     // It'll also handle the initially set selections.
     let handle = event_loop.handle();
-    data_device.quick_assign(move |data_source, event, _| {
-        handle_data_device_events(data_source, event, &handle)
+    data_device.quick_assign(move |data_device, event, mut data| {
+        let loop_data = data.get::<LoopData>().unwrap();
+        handle_data_device_events(data_device, event, loop_data, &handle)
     });
 
     // Send all pending messages to the compositor.
     // Doesn't fetch events -- we'll get those after the event loop starts.
     display
         .flush()
-        .expect("Failed to send initialisation to compositor");
+        .expect("Failed to send initialisation to the compositor.");
 
     WaylandSource::new(event_queue)
         .quick_insert(event_loop.handle())
-        .unwrap();
-    let mut shared_data = event_loop.get_signal();
+        .expect("Failed to add wayland connection to the event loop.");
 
-    println!("Starting event loop...");
+    eprintln!("Starting event loop...");
     event_loop
         .run(
             std::time::Duration::from_millis(1),
-            &mut shared_data,
+            &mut LoopData::new(event_loop.get_signal(), manager, data_device),
             |_| {},
         )
         .expect("An error occurred during the event loop!");
 }
-
-// // XXX: Testing. This aquires the CLIPBOARD selection.
-// let data_source = manager.create_data_source();
-// data_source.quick_assign(handle_source_events);
-// data_source.offer("text/plain;charset=utf-8".to_string());
-// data_source.offer("text/html".to_string());
-// data_device.set_selection(Some(&data_source));
-// // data_device.set_primary_selection(Some(&data_source));
