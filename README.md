@@ -34,6 +34,13 @@ copy a second selection while the first still hasn't been copied into
 `clipmon`'s memory, some race conditions may occur, though this likely needs to
 happen too fast for a human operator to trigger the issue.
 
+# Development
+
+Send patches on the [mailing list] and bugs reports to the [issue tracker].
+Feel free to join #whynothugo on Libera Chat.
+
+[mailing list]: https://lists.sr.ht/~whynothugo/public-inbox
+[issue tracker]: https://todo.sr.ht/~whynothugo/clipmon
 
 LICENCE
 -------
