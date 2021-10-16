@@ -60,13 +60,13 @@ impl LoopData {
         manager: Main<ZwlrDataControlManagerV1>,
         device: Main<ZwlrDataControlDeviceV1>,
     ) -> LoopData {
-        return LoopData {
+        LoopData {
             signal,
             manager,
             device,
             primary: RefCell::new(None),
             clipboard: RefCell::new(None),
-        };
+        }
     }
 
     fn take_selection(
@@ -111,10 +111,7 @@ impl LoopData {
             Selection::Clipboard => &self.clipboard,
         };
 
-        return match mime_types.borrow().as_ref() {
-            Some(data) => Some(Rc::clone(data)),
-            None => None,
-        };
+        mime_types.borrow().as_ref().map(|data| Rc::clone(data))
     }
 }
 
@@ -172,7 +169,7 @@ fn handle_selection_taken(
     let user_data = data_offer.as_ref().user_data().get::<DataOffer>().unwrap();
     user_data.selection.replace(Some(selection));
 
-    read_offer(&data_offer, handle, &user_data);
+    read_offer(data_offer, handle, user_data);
 
     eprintln!("Selection taken by client: {:?}.", selection);
 }
@@ -199,7 +196,7 @@ fn handle_data_device_events(
             data_offer
                 .as_ref()
                 .user_data()
-                .set(move || DataOffer::new());
+                .set(DataOffer::new);
             data_offer.quick_assign(handle_data_offer_events)
         }
         zwlr_data_control_device_v1::Event::Selection { id } => {

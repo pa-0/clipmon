@@ -97,7 +97,7 @@ fn create_data_source(loop_data: &mut LoopData, mime_types: &MimeTypes, selectio
 
 fn handle_pipe_event(
     reader: &mut PipeReader,
-    mime_type: &String,
+    mime_type: &str,
     mime_types: &MimeTypes,
     loop_data: &mut LoopData,
     selection: &Selection,
@@ -109,19 +109,19 @@ fn handle_pipe_event(
     println!("read data_offer: {}: {:?} bytes", mime_type, len);
 
     // Save the read value into our user data.
-    mime_types.borrow_mut().insert(mime_type.clone(), Some(buf));
+    mime_types.borrow_mut().insert(mime_type.to_string(), Some(buf));
 
     // Check if we've already copied all mime types...
     if !mime_types.borrow().iter().any(|(_, value)| {
-        return value.is_none();
+        value.is_none()
     }) {
         // XXX: What if the selection changed during the pipe-read?
-        create_data_source(loop_data, mime_types, &selection);
+        create_data_source(loop_data, mime_types, selection);
     }
 
     // Given that we've read all the data, no need to continue
     // having this source in the event loop:
-    return Result::Ok(PostAction::Remove);
+    Result::Ok(PostAction::Remove)
 }
 
 pub fn read_offer(
@@ -149,7 +149,7 @@ pub fn read_offer(
         let selection = user_data.selection.borrow().unwrap();
 
         match handle.insert_source(source, move |_event, reader, data| {
-            return handle_pipe_event(reader, &mime_type, &mime_types, data, &selection);
+            handle_pipe_event(reader, &mime_type, &mime_types, data, &selection)
         }) {
             Ok(_) => {}
             Err(err) => println!("Error setting handler for pipe: {:?}", err),
