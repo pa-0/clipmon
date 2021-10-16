@@ -5,3 +5,6 @@ tasks:
   - build: |
       cd clipmon
       cargo build
+  - lint: |
+      cd clipmon
+      cargo clippy
