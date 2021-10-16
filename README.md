@@ -1,6 +1,8 @@
 clipmon
 =======
 
+[![builds.sr.ht status](https://builds.sr.ht/~whynothugo/clipmon/commits/.build.yml.svg)](https://builds.sr.ht/~whynothugo/clipmon/commits/.build.yml?)
+
 `clipmon` monitors the wayland clipboard and does two things:
 
 - Shows a notification when an application pastes a selection. This is intended
