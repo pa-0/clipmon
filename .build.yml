@@ -1,0 +1,7 @@
+image: archlinux
+packages:
+  - rust
+tasks:
+  - build: |
+      cd clipmon
+      cargo build
