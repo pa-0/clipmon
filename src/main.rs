@@ -21,7 +21,9 @@ use wayland_protocols::wlr::unstable::data_control::v1::client::zwlr_data_contro
 use wayland_protocols::wlr::unstable::data_control::v1::client::zwlr_data_control_source_v1::ZwlrDataControlSourceV1;
 
 // TODO: It's possible that "Cell" works here too...?
-// TODO: rename to someting a bit more sensible.
+
+// This is a reference-counted, mutable hashmap. It contains mime-types as
+// keys, and raw binary blobs (e.g.: utf8 strings, raw jpegs, etc) as values.
 type MimeTypes = Rc<RefCell<HashMap<String, Option<Vec<u8>>>>>;
 
 #[derive(Debug, Clone, Copy)]
