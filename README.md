@@ -6,9 +6,9 @@ clipmon
 `clipmon` monitors the wayland clipboard and does two things:
 
 - Shows a notification when an application pastes a selection. This is intended
-  as a security measure, so when an untrusted applications (running via, e.g.:
-  Flatpak), you're aware of applications snooping on the clipboard when they
-  shouldn't be. _[Not yet implemented]_
+  as a security measure; when an untrusted applications (running via, e.g.:
+  Flatpak) starts snooping on the clipboard, it'll become evident since
+  notifications will pop up. _[Not yet implemented]_
 - It keeps selections around, so when an application exits, you don't lose the
   selection. This is what you'd expect to happen on a modern desktop, but tools
   to achieve this only existed for Xorg. _[In beta]_
