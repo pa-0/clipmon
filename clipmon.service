@@ -1,0 +1,12 @@
+[Unit]
+Description=Clipboard monitor for Wayland
+Documentation=https://sr.ht/~whynothugo/clipmon
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+Slice=session.slice
+ExecStart=/usr/lib/clipmon
+
+[Install]
+WantedBy=graphical-session.target
