@@ -126,7 +126,11 @@ fn handle_data_offer_events(
 ) {
     match ev {
         zwlr_data_control_offer_v1::Event::Offer { mime_type } => {
-            println!("got offer {:?}", mime_type);
+            println!(
+                "{:?} - Being offered type => {:?}",
+                main.as_ref().id(),
+                mime_type
+            );
 
             // TODO: Report this crash upstream:
             //
@@ -160,10 +164,13 @@ fn handle_selection_taken(
     let data_offer = match id.as_ref() {
         Some(data_offer) => data_offer,
         None => {
-            // This should not really happen.
+            // This should only happen at startup. It indicates that nobody
+            // owns a selection.
+            //
             // We copy clipboard data immediately, and then expose it ourselves, so
-            // applications should seldom UNSET any selection.
-            eprintln!("The {:?} selection has been dropped.", selection);
+            // applications should seldom UNSET any selection. Maybe if they
+            // copy-and-quit before we finish reading their selection?
+            eprintln!("The {:?} selection is not taken by anyone.", selection);
             return;
         }
     };
@@ -173,7 +180,21 @@ fn handle_selection_taken(
 
     read_offer(data_offer, handle, user_data);
 
-    eprintln!("Selection taken by client: {:?}.", selection);
+    match id {
+        Some(data_offer) => {
+            eprintln!(
+                "{:?} + {:?} selection taken by client.",
+                data_offer.as_ref().id(),
+                selection
+            );
+        }
+        None => {
+            eprintln!(
+                "{:?} Selection taken by unknown client (bug?).",
+                selection
+            );
+        }
+    }
 }
 
 /// Handles events from the data_device.
@@ -192,13 +213,13 @@ fn handle_data_device_events(
             //
             // We probably want to create an object to represent this dataoffer, ane associate all
             // the wlr_data_control_offer.offer to it.
-            println!("DataOffer: {:?}", data_offer);
+            println!(
+                "{:?} + DataOffer: someone's taking over a selection.",
+                data_offer.as_ref().id()
+            );
 
             // Maybe HashMap makes more sense and we can store the content?
-            data_offer
-                .as_ref()
-                .user_data()
-                .set(DataOffer::new);
+            data_offer.as_ref().user_data().set(DataOffer::new);
             data_offer.quick_assign(handle_data_offer_events)
         }
         zwlr_data_control_device_v1::Event::Selection { id } => {

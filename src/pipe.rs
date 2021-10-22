@@ -101,12 +101,13 @@ fn handle_pipe_event(
     mime_types: &MimeTypes,
     loop_data: &mut LoopData,
     selection: &Selection,
+    data_offer_id: u32,
 ) -> Result<PostAction, std::io::Error> {
     let mut reader = std::io::BufReader::new(reader);
     let mut buf = Vec::<u8>::new();
     let len = reader.read_to_end(&mut buf)?;
 
-    println!("read data_offer: {}: {:?} bytes", mime_type, len);
+    println!("{:?} - Read offered type => {}, {:?} bytes", data_offer_id, mime_type, len);
 
     // Save the read value into our user data.
     mime_types.borrow_mut().insert(mime_type.to_string(), Some(buf));
@@ -147,9 +148,10 @@ pub fn read_offer(
         let mime_type = mime_type.clone();
         let mime_types = Rc::clone(&user_data.mime_types);
         let selection = user_data.selection.borrow().unwrap();
+        let id = data_offer.as_ref().id();
 
         match handle.insert_source(source, move |_event, reader, data| {
-            handle_pipe_event(reader, &mime_type, &mime_types, data, &selection)
+            handle_pipe_event(reader, &mime_type, &mime_types, data, &selection, id)
         }) {
             Ok(_) => {}
             Err(err) => println!("Error setting handler for pipe: {:?}", err),
