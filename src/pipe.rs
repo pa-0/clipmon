@@ -72,7 +72,7 @@ fn handle_source_event(
             let selection = main.as_ref().user_data().get::<Selection>().unwrap();
             loop_data.selection_lost(*selection);
             main.destroy();
-            println!("Our source has been cancelled!");
+            println!("Our source for {:?} has been cancelled!", selection);
         }
         _ => unreachable!(),
     }
@@ -107,17 +107,27 @@ fn handle_pipe_event(
     let mut buf = Vec::<u8>::new();
     let len = reader.read_to_end(&mut buf)?;
 
-    println!("{:?} - Read offered type => {}, {:?} bytes", data_offer_id, mime_type, len);
+    println!(
+        "{:?} - Read offered type => {}, {:?} bytes",
+        data_offer_id, mime_type, len
+    );
 
     // Save the read value into our user data.
-    mime_types.borrow_mut().insert(mime_type.to_string(), Some(buf));
+    mime_types
+        .borrow_mut()
+        .insert(mime_type.to_string(), Some(buf));
 
     // Check if we've already copied all mime types...
-    if !mime_types.borrow().iter().any(|(_, value)| {
-        value.is_none()
-    }) {
-        // XXX: What if the selection changed during the pipe-read?
-        create_data_source(loop_data, mime_types, selection);
+    if !mime_types.borrow().iter().any(|(_, value)| value.is_none()) {
+        if loop_data.is_selection_owned_by_client(*selection, data_offer_id) {
+            create_data_source(loop_data, mime_types, selection);
+        } else {
+            println!(
+                "{:?} - No longer owns {:?} selection, bailing",
+                data_offer_id, selection
+            );
+            // TODO: Do i need to drop mime-data?
+        }
     }
 
     // Given that we've read all the data, no need to continue

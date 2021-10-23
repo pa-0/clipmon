@@ -47,6 +47,14 @@ impl DataOffer {
     }
 }
 
+// #[derive(Debug)]
+// pub struct SelectionState {
+//     data: RefCell<Option<MimeTypes>>, // Data that's copied for this selection.
+//     owner: RefCell<Option<u32>>,      // Id in case we don't own this selection.
+//     XXX: this can make sense if I can pass data_device.set_selection as a param (so it holds a
+//     ref to the func)
+// }
+
 #[derive(Debug)]
 pub struct LoopData {
     signal: LoopSignal,
@@ -54,6 +62,11 @@ pub struct LoopData {
     device: Main<ZwlrDataControlDeviceV1>,
     primary: RefCell<Option<MimeTypes>>,
     clipboard: RefCell<Option<MimeTypes>>,
+    // Id for primary selection when someone else owns it:
+    primary_source: RefCell<Option<u32>>,
+    // Id for clipboard selection when someone else owns it:
+    clipboard_source: RefCell<Option<u32>>,
+    // XXX: Can I merge primary and primary_source with a special enum(None,Ours,Client)?
 }
 
 impl LoopData {
@@ -68,6 +81,8 @@ impl LoopData {
             device,
             primary: RefCell::new(None),
             clipboard: RefCell::new(None),
+            primary_source: RefCell::new(None),
+            clipboard_source: RefCell::new(None),
         }
     }
 
@@ -87,6 +102,30 @@ impl LoopData {
                 self.device.set_selection(Some(source));
             }
         }
+    }
+
+    // XXX: naming is bad, this is a data_offer id, not client id
+    fn selection_taken_by_client(&self, selection: Selection, id: u32) {
+        match selection {
+            Selection::Primary => {
+                self.primary_source.replace(Some(id));
+            }
+            Selection::Clipboard => {
+                self.clipboard_source.replace(Some(id));
+            }
+        }
+    }
+
+    fn is_selection_owned_by_client(&self, selection: Selection, id: u32) -> bool {
+        let source = match selection {
+            Selection::Primary => *self.primary_source.borrow(),
+            Selection::Clipboard => *self.clipboard_source.borrow(),
+        };
+
+        return match source {
+            Some(i) => i == id,
+            None => false,
+        };
     }
 
     fn selection_lost(&self, selection: Selection) {
@@ -154,7 +193,9 @@ fn handle_selection_taken(
     handle: &LoopHandle<LoopData>,
 ) {
     if loop_data.is_selection_ours(selection) {
-        println!("I have {:?}, escaping", selection);
+        // This is just the compositor notifying us of an event we created;
+        // We can ignore it since we already own this selection.
+        println!("We already own have {:?}, escaping", selection);
         return;
     }
 
@@ -178,6 +219,9 @@ fn handle_selection_taken(
     let user_data = data_offer.as_ref().user_data().get::<DataOffer>().unwrap();
     user_data.selection.replace(Some(selection));
 
+    // Keep a record of which remote dataoffer owns the selection.
+    loop_data.selection_taken_by_client(selection, data_offer.as_ref().id());
+
     read_offer(data_offer, handle, user_data);
 
     match id {
@@ -189,10 +233,7 @@ fn handle_selection_taken(
             );
         }
         None => {
-            eprintln!(
-                "{:?} Selection taken by unknown client (bug?).",
-                selection
-            );
+            eprintln!("{:?} Selection taken by unknown client (bug?).", selection);
         }
     }
 }
