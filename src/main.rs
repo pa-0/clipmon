@@ -51,7 +51,7 @@ impl DataOffer {
 enum SelectionState {
     Free,
     Ours(MimeTypes),
-    Client(u32),
+    Client { data_offer_id: u32 },
 }
 
 #[derive(Debug)]
@@ -78,73 +78,58 @@ impl LoopData {
         }
     }
 
+    /// Returns the state for a given selection.
+    /// For internal use only.
+    fn state_for_selection(&self, selection: Selection) -> &RefCell<SelectionState> {
+        match selection {
+            Selection::Primary => &self.primary,
+            Selection::Clipboard => &self.clipboard,
+        }
+    }
+
     fn take_selection(
         &self,
         selection: Selection,
         data: &MimeTypes,
         source: &ZwlrDataControlSourceV1,
     ) {
+        self.state_for_selection(selection)
+            .replace(SelectionState::Ours(Rc::clone(data)));
+
         match selection {
-            Selection::Primary => {
-                self.primary.replace(SelectionState::Ours(Rc::clone(data)));
-                self.device.set_primary_selection(Some(source));
-            }
-            Selection::Clipboard => {
-                self.clipboard
-                    .replace(SelectionState::Ours(Rc::clone(data)));
-                self.device.set_selection(Some(source));
-            }
+            Selection::Primary => self.device.set_primary_selection(Some(source)),
+            Selection::Clipboard => self.device.set_selection(Some(source)),
         }
     }
 
-    fn is_selection_owned_by(&self, selection: Selection, id: u32) {
-        match selection {
-            Selection::Primary => {
-                self.primary.replace(SelectionState::Client(id));
-            }
-            Selection::Clipboard => {
-                self.clipboard.replace(SelectionState::Client(id));
-            }
-        }
+    /// Record that a client has taken a selection.
+    fn selection_taken_by_client(&self, selection: Selection, data_offer_id: u32) {
+        self.state_for_selection(selection)
+            .replace(SelectionState::Client { data_offer_id });
     }
 
+    /// Indicates whether a data_source owns a selection.
     fn is_selection_owned_by_client(&self, selection: Selection, id: u32) -> bool {
-        let source = match selection {
-            Selection::Primary => self.primary.borrow(),
-            Selection::Clipboard => self.clipboard.borrow(),
-        };
-
-        match *source {
-            SelectionState::Client(i) => i == id,
+        match *self.state_for_selection(selection).borrow() {
+            SelectionState::Client { data_offer_id } => data_offer_id == id,
             _ => false,
         }
     }
 
     fn selection_lost(&self, selection: Selection) {
-        match selection {
-            Selection::Primary => {
-                self.primary.replace(SelectionState::Free);
-            }
-            Selection::Clipboard => {
-                self.clipboard.replace(SelectionState::Free);
-            }
-        }
+        self.state_for_selection(selection)
+            .replace(SelectionState::Free);
     }
 
     fn is_selection_ours(&self, selection: Selection) -> bool {
-        return match selection {
-            Selection::Primary => matches!(*self.primary.borrow(), SelectionState::Ours(_)),
-            Selection::Clipboard => matches!(*self.clipboard.borrow(), SelectionState::Ours(_)),
-        };
+        matches!(
+            *self.state_for_selection(selection).borrow(),
+            SelectionState::Ours(_)
+        )
     }
 
     fn get_selection_data(&self, selection: Selection) -> Option<MimeTypes> {
-        let selection_data = match selection {
-            Selection::Primary => &self.primary,
-            Selection::Clipboard => &self.clipboard,
-        };
-
-        return match &*selection_data.borrow() {
+        return match &*self.state_for_selection(selection).borrow() {
             SelectionState::Ours(mime_types) => Some(Rc::clone(mime_types)),
             _ => None,
         };
@@ -215,7 +200,7 @@ fn handle_selection_taken(
     user_data.selection.replace(Some(selection));
 
     // Keep a record of which remote dataoffer owns the selection.
-    loop_data.is_selection_owned_by(selection, data_offer.as_ref().id());
+    loop_data.selection_taken_by_client(selection, data_offer.as_ref().id());
 
     read_offer(data_offer, handle, user_data);
 
