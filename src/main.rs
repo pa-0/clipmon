@@ -47,26 +47,20 @@ impl DataOffer {
     }
 }
 
-// #[derive(Debug)]
-// pub struct SelectionState {
-//     data: RefCell<Option<MimeTypes>>, // Data that's copied for this selection.
-//     owner: RefCell<Option<u32>>,      // Id in case we don't own this selection.
-//     XXX: this can make sense if I can pass data_device.set_selection as a param (so it holds a
-//     ref to the func)
-// }
+#[derive(Debug)]
+enum SelectionState {
+    Free,
+    Ours(MimeTypes),
+    Client(u32),
+}
 
 #[derive(Debug)]
 pub struct LoopData {
     signal: LoopSignal,
     manager: Main<ZwlrDataControlManagerV1>,
     device: Main<ZwlrDataControlDeviceV1>,
-    primary: RefCell<Option<MimeTypes>>,
-    clipboard: RefCell<Option<MimeTypes>>,
-    // Id for primary selection when someone else owns it:
-    primary_source: RefCell<Option<u32>>,
-    // Id for clipboard selection when someone else owns it:
-    clipboard_source: RefCell<Option<u32>>,
-    // XXX: Can I merge primary and primary_source with a special enum(None,Ours,Client)?
+    primary: RefCell<SelectionState>,
+    clipboard: RefCell<SelectionState>,
 }
 
 impl LoopData {
@@ -79,10 +73,8 @@ impl LoopData {
             signal,
             manager,
             device,
-            primary: RefCell::new(None),
-            clipboard: RefCell::new(None),
-            primary_source: RefCell::new(None),
-            clipboard_source: RefCell::new(None),
+            primary: RefCell::new(SelectionState::Free),
+            clipboard: RefCell::new(SelectionState::Free),
         }
     }
 
@@ -94,65 +86,68 @@ impl LoopData {
     ) {
         match selection {
             Selection::Primary => {
-                self.primary.replace(Some(Rc::clone(data)));
+                self.primary.replace(SelectionState::Ours(Rc::clone(data)));
                 self.device.set_primary_selection(Some(source));
             }
             Selection::Clipboard => {
-                self.clipboard.replace(Some(Rc::clone(data)));
+                self.clipboard
+                    .replace(SelectionState::Ours(Rc::clone(data)));
                 self.device.set_selection(Some(source));
             }
         }
     }
 
-    // XXX: naming is bad, this is a data_offer id, not client id
-    fn selection_taken_by_client(&self, selection: Selection, id: u32) {
+    fn is_selection_owned_by(&self, selection: Selection, id: u32) {
         match selection {
             Selection::Primary => {
-                self.primary_source.replace(Some(id));
+                self.primary.replace(SelectionState::Client(id));
             }
             Selection::Clipboard => {
-                self.clipboard_source.replace(Some(id));
+                self.clipboard.replace(SelectionState::Client(id));
             }
         }
     }
 
     fn is_selection_owned_by_client(&self, selection: Selection, id: u32) -> bool {
         let source = match selection {
-            Selection::Primary => *self.primary_source.borrow(),
-            Selection::Clipboard => *self.clipboard_source.borrow(),
+            Selection::Primary => self.primary.borrow(),
+            Selection::Clipboard => self.clipboard.borrow(),
         };
 
-        return match source {
-            Some(i) => i == id,
-            None => false,
-        };
+        match *source {
+            SelectionState::Client(i) => i == id,
+            _ => false,
+        }
     }
 
     fn selection_lost(&self, selection: Selection) {
         match selection {
             Selection::Primary => {
-                self.primary.replace(None);
+                self.primary.replace(SelectionState::Free);
             }
             Selection::Clipboard => {
-                self.clipboard.replace(None);
+                self.clipboard.replace(SelectionState::Free);
             }
         }
     }
 
     fn is_selection_ours(&self, selection: Selection) -> bool {
         return match selection {
-            Selection::Primary => self.primary.borrow().is_some(),
-            Selection::Clipboard => self.clipboard.borrow().is_some(),
+            Selection::Primary => matches!(*self.primary.borrow(), SelectionState::Ours(_)),
+            Selection::Clipboard => matches!(*self.clipboard.borrow(), SelectionState::Ours(_)),
         };
     }
 
     fn get_selection_data(&self, selection: Selection) -> Option<MimeTypes> {
-        let mime_types = match selection {
+        let selection_data = match selection {
             Selection::Primary => &self.primary,
             Selection::Clipboard => &self.clipboard,
         };
 
-        mime_types.borrow().as_ref().map(|data| Rc::clone(data))
+        return match &*selection_data.borrow() {
+            SelectionState::Ours(mime_types) => Some(Rc::clone(mime_types)),
+            _ => None,
+        };
     }
 }
 
@@ -220,7 +215,7 @@ fn handle_selection_taken(
     user_data.selection.replace(Some(selection));
 
     // Keep a record of which remote dataoffer owns the selection.
-    loop_data.selection_taken_by_client(selection, data_offer.as_ref().id());
+    loop_data.is_selection_owned_by(selection, data_offer.as_ref().id());
 
     read_offer(data_offer, handle, user_data);
 
