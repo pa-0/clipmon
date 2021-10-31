@@ -63,8 +63,9 @@ fn handle_source_event(
             };
 
             let r = file.write(typed_data);
+
             match r {
-                Ok(x) => println!("Sent {} bytes", x),
+                Ok(x) => println!("zwlr_data_control_source_v1@{:?} - Sent {} bytes.", main.as_ref().id(), x),
                 Err(err) => println!("Error sending selection: {:?}", err),
             }
         }

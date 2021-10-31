@@ -17,6 +17,11 @@ clipmon
 
 To build use `cargo build`. You can also quickly run this with `cargo run`.
 
+# Debugging
+
+Use `WAYLAND_DEBUG=1` to see all wayland events -- that's usually most of
+what's needed to debug clipmon.
+
 # Caveats
 
 In order to keep clipboard selections, `clipmon` needs to read any selection
