@@ -145,12 +145,6 @@ fn handle_data_offer_events(
 ) {
     match ev {
         zwlr_data_control_offer_v1::Event::Offer { mime_type } => {
-            println!(
-                "{:?} - Being offered type => {:?}",
-                main.as_ref().id(),
-                mime_type
-            );
-
             // TODO: Report this crash upstream:
             //
             // Apparently, trying to read from the ControlOffer at this point has mixed results.
@@ -175,7 +169,7 @@ fn handle_selection_taken(
     if loop_data.is_selection_ours(selection) {
         // This is just the compositor notifying us of an event we created;
         // We can ignore it since we already own this selection.
-        println!("We already own have {:?}, escaping", selection);
+        println!("We already own {:?}, escaping.", selection);
         return;
     }
 
@@ -203,19 +197,6 @@ fn handle_selection_taken(
     loop_data.selection_taken_by_client(selection, data_offer.as_ref().id());
 
     read_offer(data_offer, handle, user_data);
-
-    match id {
-        Some(data_offer) => {
-            eprintln!(
-                "{:?} + {:?} selection taken by client.",
-                data_offer.as_ref().id(),
-                selection
-            );
-        }
-        None => {
-            eprintln!("{:?} Selection taken by unknown client (bug?).", selection);
-        }
-    }
 }
 
 /// Handles events from the data_device.
@@ -229,16 +210,6 @@ fn handle_data_device_events(
 ) {
     match ev {
         zwlr_data_control_device_v1::Event::DataOffer { id: data_offer } => {
-            // This means the offer is different from the previous one, and we can flush that
-            // previous one.
-            //
-            // We probably want to create an object to represent this dataoffer, ane associate all
-            // the wlr_data_control_offer.offer to it.
-            println!(
-                "{:?} + DataOffer: someone's taking over a selection.",
-                data_offer.as_ref().id()
-            );
-
             // Maybe HashMap makes more sense and we can store the content?
             data_offer.as_ref().user_data().set(DataOffer::new);
             data_offer.quick_assign(handle_data_offer_events)

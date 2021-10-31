@@ -72,7 +72,6 @@ fn handle_source_event(
             let selection = main.as_ref().user_data().get::<Selection>().unwrap();
             loop_data.selection_lost(*selection);
             main.destroy();
-            println!("Our source for {:?} has been cancelled!", selection);
         }
         _ => unreachable!(),
     }
@@ -83,8 +82,6 @@ fn create_data_source(loop_data: &mut LoopData, mime_types: &MimeTypes, selectio
     // Pass the selection since this source needs to know what to send:
     // XXX: Does it make more sense to pass the selection data itself?
     data_source.as_ref().user_data().set(move || *selection);
-
-    println!("Created own data source: {:?}.", data_source);
     data_source.quick_assign(handle_source_event);
 
     for (mime_type, _) in mime_types.borrow().iter() {
@@ -92,7 +89,6 @@ fn create_data_source(loop_data: &mut LoopData, mime_types: &MimeTypes, selectio
     }
 
     loop_data.take_selection(*selection, mime_types, &data_source); // Race condition??
-    println!("Selection taken by us: {:?}.", selection);
 }
 
 fn handle_pipe_event(
@@ -108,7 +104,7 @@ fn handle_pipe_event(
     let len = reader.read_to_end(&mut buf)?;
 
     println!(
-        "{:?} - Read offered type => {}, {:?} bytes",
+        "zwlr_data_control_offer_v1@{:?} - Finished reading {}, {:?} bytes.",
         data_offer_id, mime_type, len
     );
 
