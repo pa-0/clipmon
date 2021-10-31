@@ -103,7 +103,7 @@ impl LoopData {
     }
 
     /// Record that a client has taken a selection.
-    fn selection_taken_by_client(&self, selection: Selection, data_offer_id: u32) {
+    fn set_data_offer_for_selection(&self, selection: Selection, data_offer_id: u32) {
         self.state_for_selection(selection)
             .replace(SelectionState::Client { data_offer_id });
     }
@@ -176,27 +176,19 @@ fn handle_selection_taken(
     // This is sent AFTER the offers, and indicates that all the mime types have been
     // specified. The id is that of the objet gotten via DataOffer.
 
-    let data_offer = match id.as_ref() {
-        Some(data_offer) => data_offer,
-        None => {
-            // This should only happen at startup. It indicates that nobody
-            // owns a selection.
-            //
-            // We copy clipboard data immediately, and then expose it ourselves, so
-            // applications should seldom UNSET any selection. Maybe if they
-            // copy-and-quit before we finish reading their selection?
-            eprintln!("The {:?} selection is not taken by anyone.", selection);
-            return;
+    match id.as_ref() {
+        Some(data_offer) => {
+            let user_data = data_offer.as_ref().user_data().get::<DataOffer>().unwrap();
+            user_data.selection.replace(Some(selection));
+
+            // Keep a record of which remote dataoffer owns the selection.
+            loop_data.set_data_offer_for_selection(selection, data_offer.as_ref().id());
+
+            read_offer(data_offer, handle, user_data);
         }
+        // Empty means that the selection is owned by "no one".
+        None => loop_data.selection_lost(selection),
     };
-
-    let user_data = data_offer.as_ref().user_data().get::<DataOffer>().unwrap();
-    user_data.selection.replace(Some(selection));
-
-    // Keep a record of which remote dataoffer owns the selection.
-    loop_data.selection_taken_by_client(selection, data_offer.as_ref().id());
-
-    read_offer(data_offer, handle, user_data);
 }
 
 /// Handles events from the data_device.
