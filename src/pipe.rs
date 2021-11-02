@@ -37,16 +37,15 @@ fn handle_source_event(
     match event {
         zwlr_data_control_source_v1::Event::Send { mime_type, fd } => {
             let mut file = unsafe { File::from_raw_fd(fd) };
-            let selection_data = loop_data.get_selection_data(*selection);
 
-            let inner = match selection_data {
+            let mime_types = match loop_data.get_selection_data(*selection) {
                 Some(data) => data,
                 None => {
                     eprintln!("No data for {:?}!", selection);
                     return;
                 }
             };
-            let inner = inner.borrow();
+            let inner = mime_types.borrow();
 
             let selection_data = match inner.get(&mime_type) {
                 Some(data) => data,
@@ -59,15 +58,14 @@ fn handle_source_event(
                 }
             };
 
-            let data = selection_data.data.borrow();
-            match file.write(&data) {
+            match file.write(&selection_data.data.borrow()) {
                 Ok(bytes) => println!(
                     "zwlr_data_control_source_v1@{:?} - Sent {} bytes.",
                     main.as_ref().id(),
                     bytes
                 ),
                 Err(err) => println!("Error sending selection: {:?}", err),
-            }
+            };
         }
         zwlr_data_control_source_v1::Event::Cancelled {} => {
             loop_data.selection_lost(*selection);
@@ -98,7 +96,6 @@ fn handle_pipe_event(
     selection: &Selection,
     data_offer_id: u32,
 ) -> Result<PostAction, std::io::Error> {
-
     // TODO: extract all the "read to Vec<u8>" logic into a reusable helper.
 
     let mut reader = std::io::BufReader::new(reader);

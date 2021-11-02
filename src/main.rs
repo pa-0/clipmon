@@ -20,7 +20,6 @@ use wayland_protocols::wlr::unstable::data_control::v1::client::zwlr_data_contro
 use wayland_protocols::wlr::unstable::data_control::v1::client::zwlr_data_control_offer_v1::ZwlrDataControlOfferV1;
 use wayland_protocols::wlr::unstable::data_control::v1::client::zwlr_data_control_source_v1::ZwlrDataControlSourceV1;
 
-
 #[derive(Debug, Default)]
 pub struct SelectionData {
     data: RefCell<Vec<u8>>,
@@ -168,7 +167,10 @@ fn handle_data_offer_events(
                 .get::<DataOffer>()
                 .expect("user_data is of type DataOffer");
 
-            user_data.mime_types.borrow_mut().insert(mime_type, SelectionData::default());
+            user_data
+                .mime_types
+                .borrow_mut()
+                .insert(mime_type, SelectionData::default());
         }
         _ => unreachable!(),
     }
