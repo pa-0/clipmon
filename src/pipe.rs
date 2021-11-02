@@ -81,7 +81,6 @@ fn handle_source_event(
 fn create_data_source(loop_data: &mut LoopData, mime_types: &MimeTypes, selection: &Selection) {
     let data_source = loop_data.manager.create_data_source();
     // Pass the selection since this source needs to know what to send:
-    // XXX: Does it make more sense to pass the selection data itself?
     data_source.as_ref().user_data().set(move || *selection);
     data_source.quick_assign(handle_source_event);
 
