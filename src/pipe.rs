@@ -58,6 +58,9 @@ fn handle_source_event(
                 }
             };
 
+            // Triggers a notification indicating that a client has pasted.
+            loop_data.notification.ping();
+
             match file.write(&selection_data.data.borrow()) {
                 Ok(bytes) => println!(
                     "zwlr_data_control_source_v1@{:?} - Sent {} bytes.",

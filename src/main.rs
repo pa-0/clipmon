@@ -1,6 +1,8 @@
 mod pipe;
 
 use crate::pipe::read_offer;
+use calloop::ping::make_ping;
+use calloop::ping::Ping;
 use calloop::EventLoop;
 use calloop::LoopHandle;
 use calloop::LoopSignal;
@@ -56,6 +58,7 @@ pub struct LoopData {
     device: Main<ZwlrDataControlDeviceV1>,
     primary: SelectionState,
     clipboard: SelectionState,
+    notification: Ping,
 }
 
 impl LoopData {
@@ -63,6 +66,7 @@ impl LoopData {
         signal: LoopSignal,
         manager: Main<ZwlrDataControlManagerV1>,
         device: Main<ZwlrDataControlDeviceV1>,
+        notification: Ping,
     ) -> LoopData {
         LoopData {
             signal,
@@ -70,6 +74,7 @@ impl LoopData {
             device,
             primary: SelectionState::Free,
             clipboard: SelectionState::Free,
+            notification,
         }
     }
 
@@ -239,6 +244,10 @@ fn handle_data_device_events(
     }
 }
 
+fn handle_notification_event(_: (), _: &mut (), _loop_data: &mut LoopData) -> () {
+    println!("TODO: should show a notification indicating a client has read the clipboard.");
+}
+
 fn main() {
     let display = Display::connect_to_env().expect("display is valid");
     let mut event_queue = display.create_event_queue();
@@ -285,18 +294,28 @@ fn main() {
         .flush()
         .expect("send initialisation to the compositor");
 
-    // TODO: create a "Ping" source for showing notifications.
-    // TODO: trigger a notification on paste.
-
     WaylandSource::new(event_queue)
         .quick_insert(event_loop.handle())
         .expect("add wayland connection to the event loop");
 
-    eprintln!("Starting event loop...");
+    // Create a custom source and handle
+    let (notification_handle, notification_source) =
+        make_ping().expect("create notification handler and source");
+
+    event_loop
+        .handle()
+        .insert_source(notification_source, handle_notification_event)
+        .expect("add notification handle to event loop");
+
     event_loop
         .run(
             std::time::Duration::from_millis(1),
-            &mut LoopData::new(event_loop.get_signal(), manager, data_device),
+            &mut LoopData::new(
+                event_loop.get_signal(),
+                manager,
+                data_device,
+                notification_handle,
+            ),
             |_| {},
         )
         .expect("run the event loop");
