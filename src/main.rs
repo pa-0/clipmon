@@ -32,19 +32,10 @@ enum Selection {
     Clipboard, // Ctrl+C.
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct DataOffer {
     mime_types: MimeTypes,
     selection: RefCell<Option<Selection>>,
-}
-
-impl DataOffer {
-    fn new() -> DataOffer {
-        DataOffer {
-            mime_types: Rc::new(RefCell::new(HashMap::new())),
-            selection: RefCell::new(None),
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -224,7 +215,7 @@ fn handle_data_device_events(
     match ev {
         zwlr_data_control_device_v1::Event::DataOffer { id: data_offer } => {
             // Maybe HashMap makes more sense and we can store the content?
-            data_offer.as_ref().user_data().set(DataOffer::new);
+            data_offer.as_ref().user_data().set(DataOffer::default);
             data_offer.quick_assign(handle_data_offer_events)
         }
         zwlr_data_control_device_v1::Event::Selection { id } => {
