@@ -139,10 +139,10 @@ impl LoopData {
             Selection::Clipboard => &self.clipboard,
         };
 
-        return match state {
-            SelectionState::Ours(mime_types) => Some(Rc::clone(&mime_types)),
+        match state {
+            SelectionState::Ours(mime_types) => Some(Rc::clone(mime_types)),
             _ => None,
-        };
+        }
     }
 }
 
