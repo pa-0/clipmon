@@ -10,6 +10,6 @@ license = "ISC"
 [dependencies]
 wayland-client = "0.29.0"
 wayland-protocols = { version= "0.29.0", features= ["client", "unstable_protocols"]} 
-os_pipe = "0.9.1"
 calloop = "0.9.1"
 smithay-client-toolkit = "0.15.1"
+libc = "0.2.106"

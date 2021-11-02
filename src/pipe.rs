@@ -8,7 +8,6 @@ use calloop::Interest;
 use calloop::LoopHandle;
 use calloop::Mode;
 use calloop::PostAction;
-use os_pipe::PipeReader;
 use std::fs::File;
 use std::io::Read;
 use std::io::Write;
@@ -94,7 +93,7 @@ fn create_data_source(loop_data: &mut LoopData, mime_types: &MimeTypes, selectio
 }
 
 fn handle_pipe_event(
-    reader: &mut PipeReader,
+    reader: &mut File,
     mime_type: &str,
     mime_types: &MimeTypes,
     loop_data: &mut LoopData,
@@ -140,6 +139,17 @@ fn handle_pipe_event(
     Result::Ok(PostAction::Remove)
 }
 
+fn create_pipes() -> Result<(File, File), std::io::Error> {
+    let mut fds: [libc::c_int; 2] = [0; 2];
+    let res = unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC) };
+    if res != 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    let reader = unsafe { File::from_raw_fd(fds[0]) };
+    let writer = unsafe { File::from_raw_fd(fds[1]) };
+    Ok((reader, writer))
+}
+
 pub fn read_offer(
     data_offer: &ZwlrDataControlOfferV1,
     handle: &LoopHandle<LoopData>,
@@ -149,7 +159,7 @@ pub fn read_offer(
     // "UTF8_STRING" and "text/plain;charset=utf-8" should be the same, so
     // copying just one might suffice.
     for (mime_type, _) in user_data.mime_types.borrow().iter() {
-        let (reader, writer) = match os_pipe::pipe() {
+        let (reader, writer) = match create_pipes() {
             Ok((reader, writer)) => (reader, writer),
             Err(err) => {
                 eprintln!("Could not open pipe to read data: {:?}", err);
