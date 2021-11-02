@@ -20,11 +20,18 @@ use wayland_protocols::wlr::unstable::data_control::v1::client::zwlr_data_contro
 use wayland_protocols::wlr::unstable::data_control::v1::client::zwlr_data_control_offer_v1::ZwlrDataControlOfferV1;
 use wayland_protocols::wlr::unstable::data_control::v1::client::zwlr_data_control_source_v1::ZwlrDataControlSourceV1;
 
+
+#[derive(Debug, Default)]
+pub struct SelectionData {
+    data: RefCell<Vec<u8>>,
+    is_complete: RefCell<bool>,
+}
+
 // TODO: It's possible that "Cell" works here too...?
 
 // This is a reference-counted, mutable hashmap. It contains mime-types as
 // keys, and raw binary blobs (e.g.: utf8 strings, raw jpegs, etc) as values.
-type MimeTypes = Rc<RefCell<HashMap<String, Option<Vec<u8>>>>>;
+type MimeTypes = Rc<RefCell<HashMap<String, SelectionData>>>;
 
 #[derive(Debug, Clone, Copy)]
 enum Selection {
@@ -161,7 +168,7 @@ fn handle_data_offer_events(
                 .get::<DataOffer>()
                 .expect("user_data is of type DataOffer");
 
-            user_data.mime_types.borrow_mut().insert(mime_type, None);
+            user_data.mime_types.borrow_mut().insert(mime_type, SelectionData::default());
         }
         _ => unreachable!(),
     }

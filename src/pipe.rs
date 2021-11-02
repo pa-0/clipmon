@@ -49,17 +49,8 @@ fn handle_source_event(
             };
             let inner = inner.borrow();
 
-            let typed_data = match inner.get(&mime_type) {
-                Some(data) => match data {
-                    Some(inner) => inner,
-                    None => {
-                        eprintln!(
-                            "Data is missing for mime_type: {:?},{:?}!",
-                            selection, mime_type
-                        );
-                        return;
-                    }
-                },
+            let selection_data = match inner.get(&mime_type) {
+                Some(data) => data,
                 None => {
                     eprintln!(
                         "Client requested unavailable mime_type: {:?},{:?}!",
@@ -69,7 +60,7 @@ fn handle_source_event(
                 }
             };
 
-            let r = file.write(typed_data);
+            let r = file.write(&selection_data.data.borrow());
 
             match r {
                 Ok(bytes) => println!(
@@ -111,21 +102,28 @@ fn handle_pipe_event(
     data_offer_id: u32,
 ) -> Result<PostAction, std::io::Error> {
     let mut reader = std::io::BufReader::new(reader);
-    let mut buf = Vec::<u8>::new();
-    let len = reader.read_to_end(&mut buf)?;
+    let len = {
+        let mime_types = &mime_types.borrow_mut();
+        let selection_data = mime_types.get(&mime_type.to_string()).unwrap();
+        let mut buf = selection_data.data.borrow_mut();
+
+        let len = reader.read_to_end(&mut *buf)?;
+
+        selection_data.is_complete.replace(true);
+        len
+    };
 
     println!(
         "zwlr_data_control_offer_v1@{:?} - Finished reading {}, {:?} bytes.",
         data_offer_id, mime_type, len
     );
 
-    // Save the read value into our user data.
-    mime_types
-        .borrow_mut()
-        .insert(mime_type.to_string(), Some(buf));
-
     // Check if we've already copied all mime types...
-    if !mime_types.borrow().iter().any(|(_, value)| value.is_none()) {
+    if !mime_types
+        .borrow()
+        .iter()
+        .any(|(_, value)| !*value.is_complete.borrow())
+    {
         if loop_data.is_selection_owned_by_client(*selection, data_offer_id) {
             create_data_source(loop_data, mime_types, selection);
         } else {
