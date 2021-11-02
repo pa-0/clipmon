@@ -26,8 +26,6 @@ pub struct SelectionData {
     is_complete: RefCell<bool>,
 }
 
-// TODO: It's possible that "Cell" works here too...?
-
 // This is a reference-counted, mutable hashmap. It contains mime-types as
 // keys, and raw binary blobs (e.g.: utf8 strings, raw jpegs, etc) as values.
 type MimeTypes = Rc<RefCell<HashMap<String, SelectionData>>>;
