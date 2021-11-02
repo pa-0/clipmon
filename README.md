@@ -17,6 +17,16 @@ clipmon
 
 To build use `cargo build`. You can also quickly run this with `cargo run`.
 
+# Design
+
+- We use the `wlr-data-control-unstable-v1` wayland protocol.
+- As soon as an application copies data into a selection, we copy this data and
+  claim the clipboard ourselves.
+- Because only foreground applications can take a selection, it should not be
+  possible for another application to try and read data before we do.
+- When another application tries to paste a selection, we receive that
+  request, and can show a notification before sending any data.
+
 # Debugging
 
 Use `WAYLAND_DEBUG=1` to see all wayland events -- that's usually most of
