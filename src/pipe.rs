@@ -59,9 +59,8 @@ fn handle_source_event(
                 }
             };
 
-            let r = file.write(&selection_data.data.borrow());
-
-            match r {
+            let data = selection_data.data.borrow();
+            match file.write(&data) {
                 Ok(bytes) => println!(
                     "zwlr_data_control_source_v1@{:?} - Sent {} bytes.",
                     main.as_ref().id(),
@@ -99,22 +98,51 @@ fn handle_pipe_event(
     selection: &Selection,
     data_offer_id: u32,
 ) -> Result<PostAction, std::io::Error> {
+
+    // TODO: extract all the "read to Vec<u8>" logic into a reusable helper.
+
     let mut reader = std::io::BufReader::new(reader);
-    let len = {
-        let mime_types = &mime_types.borrow_mut();
-        let selection_data = mime_types.get(&mime_type.to_string()).unwrap();
-        let mut buf = selection_data.data.borrow_mut();
+    let mut_mime_types = &mime_types.borrow();
+    let selection_data = mut_mime_types
+        .get(mime_type)
+        .expect("mime_types contains the read mime_type entry");
 
-        let len = reader.read_to_end(&mut *buf)?;
+    loop {
+        let mut buf = [0; 32];
+        let len = match reader.read(&mut buf) {
+            Ok(len) => len,
+            Err(e) => {
+                if e.kind() == std::io::ErrorKind::WouldBlock {
+                    return Ok(PostAction::Continue);
+                } else {
+                    return Err(e);
+                }
+            }
+        };
 
-        selection_data.is_complete.replace(true);
-        len
-    };
+        if len == 0 {
+            break;
+        }
+
+        println!(
+            "zwlr_data_control_offer_v1@{:?} - Read {}, {:?} bytes.",
+            data_offer_id, mime_type, len
+        );
+
+        selection_data
+            .data
+            .borrow_mut()
+            .extend_from_slice(&buf[0..len]);
+    }
 
     println!(
-        "zwlr_data_control_offer_v1@{:?} - Finished reading {}, {:?} bytes.",
-        data_offer_id, mime_type, len
+        "zwlr_data_control_offer_v1@{:?} - Finished reading {}, total {:?} bytes.",
+        data_offer_id,
+        mime_type,
+        selection_data.data.borrow().len()
     );
+
+    selection_data.is_complete.replace(true);
 
     // Check if we've already copied all mime types...
     if !mime_types
@@ -129,7 +157,6 @@ fn handle_pipe_event(
                 "{:?} - No longer owns {:?} selection, bailing",
                 data_offer_id, selection
             );
-            // TODO: Do i need to drop mime-data?
         }
     }
 
@@ -140,7 +167,7 @@ fn handle_pipe_event(
 
 fn create_pipes() -> Result<(File, File), std::io::Error> {
     let mut fds: [libc::c_int; 2] = [0; 2];
-    let res = unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC) };
+    let res = unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC | libc::O_NONBLOCK) };
     if res != 0 {
         return Err(std::io::Error::last_os_error());
     }
@@ -157,7 +184,7 @@ pub fn read_offer(
     // TODO: I might want to be smart about some types here.
     // "UTF8_STRING" and "text/plain;charset=utf-8" should be the same, so
     // copying just one might suffice.
-    for (mime_type, _) in user_data.mime_types.borrow().iter() {
+    for (mime_type, _selection_data) in user_data.mime_types.borrow().iter() {
         let (reader, writer) = match create_pipes() {
             Ok((reader, writer)) => (reader, writer),
             Err(err) => {
@@ -178,8 +205,8 @@ pub fn read_offer(
         let id = data_offer.as_ref().id();
 
         handle
-            .insert_source(source, move |_event, reader, data| {
-                handle_pipe_event(reader, &mime_type, &mime_types, data, &selection, id)
+            .insert_source(source, move |_event, reader, loop_data| {
+                handle_pipe_event(reader, &mime_type, &mime_types, loop_data, &selection, id)
             })
             .expect("handler for pipe event is set");
     }
