@@ -164,14 +164,16 @@ pub fn read_offer(
         let source = Generic::new(reader, Interest::READ, Mode::Edge);
         let mime_type = mime_type.clone();
         let mime_types = Rc::clone(&user_data.mime_types);
-        let selection = user_data.selection.borrow().expect("can borrow selection from user_data");
+        let selection = user_data
+            .selection
+            .borrow()
+            .expect("can borrow selection from user_data");
         let id = data_offer.as_ref().id();
 
-        match handle.insert_source(source, move |_event, reader, data| {
-            handle_pipe_event(reader, &mime_type, &mime_types, data, &selection, id)
-        }) {
-            Ok(_) => {}
-            Err(err) => println!("Error setting handler for pipe: {:?}", err),
-        }
+        handle
+            .insert_source(source, move |_event, reader, data| {
+                handle_pipe_event(reader, &mime_type, &mime_types, data, &selection, id)
+            })
+            .expect("handler for pipe event is set");
     }
 }

@@ -59,8 +59,8 @@ pub struct LoopData {
     signal: LoopSignal,
     manager: Main<ZwlrDataControlManagerV1>,
     device: Main<ZwlrDataControlDeviceV1>,
-    primary: RefCell<SelectionState>,
-    clipboard: RefCell<SelectionState>,
+    primary: SelectionState,
+    clipboard: SelectionState,
 }
 
 impl LoopData {
@@ -73,64 +73,77 @@ impl LoopData {
             signal,
             manager,
             device,
-            primary: RefCell::new(SelectionState::Free),
-            clipboard: RefCell::new(SelectionState::Free),
-        }
-    }
-
-    /// Returns the state for a given selection.
-    /// For internal use only.
-    fn state_for_selection(&self, selection: Selection) -> &RefCell<SelectionState> {
-        match selection {
-            Selection::Primary => &self.primary,
-            Selection::Clipboard => &self.clipboard,
+            primary: SelectionState::Free,
+            clipboard: SelectionState::Free,
         }
     }
 
     fn take_selection(
-        &self,
+        &mut self,
         selection: Selection,
         data: &MimeTypes,
         source: &ZwlrDataControlSourceV1,
     ) {
-        self.state_for_selection(selection)
-            .replace(SelectionState::Ours(Rc::clone(data)));
+        let new_state = SelectionState::Ours(Rc::clone(data));
 
         match selection {
-            Selection::Primary => self.device.set_primary_selection(Some(source)),
-            Selection::Clipboard => self.device.set_selection(Some(source)),
+            Selection::Primary => {
+                self.primary = new_state;
+                self.device.set_primary_selection(Some(source));
+            }
+            Selection::Clipboard => {
+                self.clipboard = new_state;
+                self.device.set_selection(Some(source));
+            }
         }
     }
 
     /// Record that a client has taken a selection.
-    fn set_data_offer_for_selection(&self, selection: Selection, data_offer_id: u32) {
-        self.state_for_selection(selection)
-            .replace(SelectionState::Client { data_offer_id });
+    fn set_data_offer_for_selection(&mut self, selection: Selection, data_offer_id: u32) {
+        let new_state = SelectionState::Client { data_offer_id };
+
+        match selection {
+            Selection::Primary => self.primary = new_state,
+            Selection::Clipboard => self.clipboard = new_state,
+        }
     }
 
     /// Indicates whether a data_source owns a selection.
     fn is_selection_owned_by_client(&self, selection: Selection, id: u32) -> bool {
-        match *self.state_for_selection(selection).borrow() {
-            SelectionState::Client { data_offer_id } => data_offer_id == id,
+        let state = match selection {
+            Selection::Primary => &self.primary,
+            Selection::Clipboard => &self.clipboard,
+        };
+
+        match state {
+            SelectionState::Client { data_offer_id } => *data_offer_id == id,
             _ => false,
         }
     }
 
-    fn selection_lost(&self, selection: Selection) {
-        self.state_for_selection(selection)
-            .replace(SelectionState::Free);
+    fn selection_lost(&mut self, selection: Selection) {
+        match selection {
+            Selection::Primary => self.primary = SelectionState::Free,
+            Selection::Clipboard => self.clipboard = SelectionState::Free,
+        }
     }
 
     fn is_selection_ours(&self, selection: Selection) -> bool {
-        matches!(
-            *self.state_for_selection(selection).borrow(),
-            SelectionState::Ours(_)
-        )
+        let state = match selection {
+            Selection::Primary => &self.primary,
+            Selection::Clipboard => &self.clipboard,
+        };
+        matches!(state, SelectionState::Ours(_))
     }
 
     fn get_selection_data(&self, selection: Selection) -> Option<MimeTypes> {
-        return match &*self.state_for_selection(selection).borrow() {
-            SelectionState::Ours(mime_types) => Some(Rc::clone(mime_types)),
+        let state = match selection {
+            Selection::Primary => &self.primary,
+            Selection::Clipboard => &self.clipboard,
+        };
+
+        return match state {
+            SelectionState::Ours(mime_types) => Some(Rc::clone(&mime_types)),
             _ => None,
         };
     }
@@ -262,7 +275,9 @@ fn main() {
     // It'll also handle the initially set selections.
     let handle = event_loop.handle();
     data_device.quick_assign(move |data_device, event, mut data| {
-        let loop_data = data.get::<LoopData>().expect("loop data is of type LoopData");
+        let loop_data = data
+            .get::<LoopData>()
+            .expect("loop data is of type LoopData");
         handle_data_device_events(data_device, event, loop_data, &handle)
     });
 
