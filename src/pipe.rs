@@ -26,10 +26,17 @@ fn handle_source_event(
     event: zwlr_data_control_source_v1::Event,
     mut data: DispatchData,
 ) {
-    let loop_data = data.get::<LoopData>().unwrap();
+    let loop_data = data
+        .get::<LoopData>()
+        .expect("dispatch data is of type LoopData");
+    let selection = main
+        .as_ref()
+        .user_data()
+        .get::<Selection>()
+        .expect("user_data is of type Selection");
+
     match event {
         zwlr_data_control_source_v1::Event::Send { mime_type, fd } => {
-            let selection = main.as_ref().user_data().get::<Selection>().unwrap();
             let mut file = unsafe { File::from_raw_fd(fd) };
             let selection_data = loop_data.get_selection_data(*selection);
 
@@ -65,12 +72,15 @@ fn handle_source_event(
             let r = file.write(typed_data);
 
             match r {
-                Ok(x) => println!("zwlr_data_control_source_v1@{:?} - Sent {} bytes.", main.as_ref().id(), x),
+                Ok(bytes) => println!(
+                    "zwlr_data_control_source_v1@{:?} - Sent {} bytes.",
+                    main.as_ref().id(),
+                    bytes
+                ),
                 Err(err) => println!("Error sending selection: {:?}", err),
             }
         }
         zwlr_data_control_source_v1::Event::Cancelled {} => {
-            let selection = main.as_ref().user_data().get::<Selection>().unwrap();
             loop_data.selection_lost(*selection);
             main.destroy();
         }
@@ -154,7 +164,7 @@ pub fn read_offer(
         let source = Generic::new(reader, Interest::READ, Mode::Edge);
         let mime_type = mime_type.clone();
         let mime_types = Rc::clone(&user_data.mime_types);
-        let selection = user_data.selection.borrow().unwrap();
+        let selection = user_data.selection.borrow().expect("can borrow selection from user_data");
         let id = data_offer.as_ref().id();
 
         match handle.insert_source(source, move |_event, reader, data| {

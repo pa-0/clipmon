@@ -151,7 +151,11 @@ fn handle_data_offer_events(
             // If the selection comes from alacritty it works.
             // If the selection comes from firefox it doesn't.
 
-            let user_data = main.as_ref().user_data().get::<DataOffer>().unwrap();
+            let user_data = main
+                .as_ref()
+                .user_data()
+                .get::<DataOffer>()
+                .expect("user_data is of type DataOffer");
 
             user_data.mime_types.borrow_mut().insert(mime_type, None);
         }
@@ -178,7 +182,11 @@ fn handle_selection_taken(
 
     match id.as_ref() {
         Some(data_offer) => {
-            let user_data = data_offer.as_ref().user_data().get::<DataOffer>().unwrap();
+            let user_data = data_offer
+                .as_ref()
+                .user_data()
+                .get::<DataOffer>()
+                .expect("user_data is of type DataOffer");
             user_data.selection.replace(Some(selection));
 
             // Keep a record of which remote dataoffer owns the selection.
@@ -221,7 +229,7 @@ fn handle_data_device_events(
 }
 
 fn main() {
-    let display = Display::connect_to_env().unwrap();
+    let display = Display::connect_to_env().expect("display is valid");
     let mut event_queue = display.create_event_queue();
     let attached_display = (*display).clone().attach(event_queue.token());
     let globals = GlobalManager::new(&attached_display);
@@ -232,38 +240,29 @@ fn main() {
     // sent us all available globals.
     event_queue
         .sync_roundtrip(&mut (), |_, _, _| unreachable!())
-        .unwrap();
+        .expect("round trip to compositor");
 
-    let seat = match globals.instantiate_exact::<WlSeat>(1) {
-        Ok(main) => main,
-        Err(err) => {
-            eprintln!("Failed to get current seat.");
-            panic!("{}", err);
-        }
-    };
+    let seat = globals
+        .instantiate_exact::<WlSeat>(1)
+        .expect("get seat from compositor");
     seat.quick_assign(|_, _, _| {}); // Ignore all events for the seat.
 
     event_queue
         .sync_roundtrip(&mut (), |_, _, _| unreachable!())
-        .unwrap();
+        .expect("round trip to compositor");
 
-    let manager = match globals.instantiate_exact::<ZwlrDataControlManagerV1>(2) {
-        Err(err) => {
-            eprintln!("Compositor doesn't support wlr-data-control-unstable-v1.");
-            panic!("{}", err);
-        }
-        Ok(res) => res,
-    };
+    let manager = globals
+        .instantiate_exact::<ZwlrDataControlManagerV1>(2)
+        .expect("compositor supports wlr-data-control-unstable-v1");
 
-    let mut event_loop =
-        EventLoop::<LoopData>::try_new().expect("Failed to initialise event loop.");
+    let mut event_loop = EventLoop::<LoopData>::try_new().expect("initialise event loop");
 
     let data_device = manager.get_data_device(&seat);
     // This will set up handlers to listen to selection ("copy") events.
     // It'll also handle the initially set selections.
     let handle = event_loop.handle();
     data_device.quick_assign(move |data_device, event, mut data| {
-        let loop_data = data.get::<LoopData>().unwrap();
+        let loop_data = data.get::<LoopData>().expect("loop data is of type LoopData");
         handle_data_device_events(data_device, event, loop_data, &handle)
     });
 
@@ -271,14 +270,14 @@ fn main() {
     // Doesn't fetch events -- we'll get those after the event loop starts.
     display
         .flush()
-        .expect("Failed to send initialisation to the compositor.");
+        .expect("send initialisation to the compositor");
 
-    // TODO: create a speical source for showing notifications.
+    // TODO: create a "Ping" source for showing notifications.
     // TODO: trigger a notification on paste.
 
     WaylandSource::new(event_queue)
         .quick_insert(event_loop.handle())
-        .expect("Failed to add wayland connection to the event loop.");
+        .expect("add wayland connection to the event loop");
 
     eprintln!("Starting event loop...");
     event_loop
@@ -287,5 +286,5 @@ fn main() {
             &mut LoopData::new(event_loop.get_signal(), manager, data_device),
             |_| {},
         )
-        .expect("An error occurred during the event loop!");
+        .expect("run the event loop");
 }
