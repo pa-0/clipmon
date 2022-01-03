@@ -45,11 +45,14 @@ application might expose that selection as multiple formats (jpeg/png/ico/bmp,
 etc). In order to avoid any data loss, `clipmon` must copy **all** these
 formats, which can potentially be a few megabytes or RAM.
 
-`clipmon` is still under development, and there's likely still bugs. It logs
-very verbosely (and, sadly, in a very untidy way). It's possible that if you
-copy a second selection while the first still hasn't been copied into
-`clipmon`'s memory, some race conditions may occur, though this likely needs to
-happen too fast for a human operator to trigger the issue.
+`clipmon` is still under development, and there's likely still bugs. Run it
+with `WAYLAND_DEBUG=1` to see detailed logs. It's possible that if you copy a
+second selection while the first still hasn't been copied into `clipmon`'s
+memory, some race conditions may occur, though this likely needs to happen too
+fast for a human operator to trigger the issue.
+
+There are potential race conditions in the Wayland protocol that we use that
+cannot be worked around without changing the protocol itself.
 
 # Development
 
