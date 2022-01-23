@@ -3,15 +3,20 @@ clipmon
 
 [![builds.sr.ht status](https://builds.sr.ht/~whynothugo/clipmon/commits/.build.yml.svg)](https://builds.sr.ht/~whynothugo/clipmon/commits/.build.yml?)
 
-`clipmon` monitors the wayland clipboard and does two things:
+`clipmon`, or **clip**board **mon**itor is a wayland helper that:
 
-- Shows a notification when an application pastes a selection. This is intended
-  as a security measure; when an untrusted applications (running via, e.g.:
-  Flatpak) starts snooping on the clipboard, it'll become evident since
-  notifications will pop up. _[Not yet implemented]_
-- It keeps selections around, so when an application exits, you don't lose the
-  selection. This is what you'd expect to happen on a modern desktop, but tools
-  to achieve this only existed for Xorg. _[In beta]_
+1. It keeps the selection when the application that copied exits. Normally,
+   when the copying application exits, the selection is lost and this can be
+   rather annoying. Keeping the selection around matches what is normally
+   expected to happen on a modern desktop. **This feature is stable**.
+2. Shows a notification when an application pastes a selection. This is
+   intended as a security measure: when an untrusted application (ideally
+   sandboxed) snooping on the clipboard, the user will quickly by notified of
+   what's going on. **This feature is WIP**.
+
+The initial intention was meretly the second feature, but due to limitations of
+the underlying Wayland protocol, it's necessary to implement a clipboard
+monitor to achieve this.
 
 # Build
 
@@ -25,7 +30,12 @@ To build use `cargo build`. You can also quickly run this with `cargo run`.
 - Because only foreground applications can take a selection, it should not be
   possible for another application to try and read data before we do.
 - When another application tries to paste a selection, we receive that
-  request, and can show a notification before sending any data.
+  request, and can show a notification before sending any data. **not
+  implemented**
+
+Additionally, `clipmon` avoids ever writing copied data to disk, since highly
+sensitive information can go through a clipboard, and that could lead to
+unintentional leaks.
 
 # Debugging
 
@@ -45,24 +55,27 @@ application might expose that selection as multiple formats (jpeg/png/ico/bmp,
 etc). In order to avoid any data loss, `clipmon` must copy **all** these
 formats, which can potentially be a few megabytes or RAM.
 
-`clipmon` is still under development, and there's likely still bugs. Run it
-with `WAYLAND_DEBUG=1` to see detailed logs. It's possible that if you copy a
-second selection while the first still hasn't been copied into `clipmon`'s
-memory, some race conditions may occur, though this likely needs to happen too
-fast for a human operator to trigger the issue.
+Memory containing copied data _may_ be swapped; preventing that is not
+yet implemented.
 
-There are potential race conditions in the Wayland protocol that we use that
-cannot be worked around without changing the protocol itself.
+When two selections are taken ("copied") in extremely quick succession, it's
+possible that race conditions may occur. This is due to design limitations of
+the underlying wayland protocol, but should not realistically happen in real
+life scenario since it needs to happen too fast for a human operator to trigger
+the issue. This cannot be fixed without changes to the underlying Wayland
+protocol.
 
 # Development
 
 Send patches on the [mailing list] and bugs reports to the [issue tracker].
-Feel free to join #whynothugo on Libera Chat.
+Feel free to join #whynothugo on Libera Chat. If you find this tool useful,
+[leave a tip].
 
 [mailing list]: https://lists.sr.ht/~whynothugo/public-inbox
 [issue tracker]: https://todo.sr.ht/~whynothugo/clipmon
+[leave a tip]: https://ko-fi.com/whynothugo
 
 LICENCE
 -------
 
-`clipmon` is licensed under the ISC licence. See LICENCE for details.
+`clipmon` is open sourced under the ISC licence. See LICENCE for details.
