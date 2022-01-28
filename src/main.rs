@@ -255,7 +255,7 @@ fn handle_data_device_events(
     }
 }
 
-fn handle_notification_event(_: (), _: &mut (), _loop_data: &mut LoopData) -> () {
+fn handle_notification_event(_: (), _: &mut (), _loop_data: &mut LoopData) {
     println!("TODO: should show a notification indicating a client has read the clipboard.");
 }
 
