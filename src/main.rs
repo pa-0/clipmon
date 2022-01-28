@@ -164,13 +164,16 @@ fn handle_data_offer_events(
             // If the selection comes from alacritty it works.
             // If the selection comes from firefox it doesn't.
 
-            // Mime types should have a slash. The only exception so far seems to be firefox, but,
-            // when trying to read content from any of those offers, it never writes any bytes and
-            // trying to copy/paste from Firefox again results in it crashing.
+            // Check that the input is a valid mime type. Firefox seems to expose some valid
+            // mime-types, but when trying to read content from any of those offers, it never
+            // writes any bytes and trying to copy/paste from Firefox again results in it crashing.
             // See https://bugzilla.mozilla.org/show_bug.cgi?id=1731511
-            if !mime_type.contains("/") {
+            //
+            // Since we then forward this to other clients, it's best to be somewhat strict in what
+            // we accept here.
+            if mime_type.parse::<mime::Mime>().is_err() {
                 return;
-            }
+            };
 
             let user_data = main
                 .as_ref()

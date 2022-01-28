@@ -13,3 +13,4 @@ wayland-protocols = { version= "0.29.0", features= ["client", "unstable_protocol
 calloop = "0.9.1"
 smithay-client-toolkit = "0.15.1"
 libc = "0.2.106"
+mime = "0.3.16"
