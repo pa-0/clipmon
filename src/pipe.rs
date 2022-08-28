@@ -78,17 +78,17 @@ fn handle_source_event(
     }
 }
 
-fn create_data_source(loop_data: &mut LoopData, mime_types: &MimeTypes, selection: &Selection) {
+fn create_data_source(loop_data: &mut LoopData, mime_types: &MimeTypes, selection: Selection) {
     let data_source = loop_data.manager.create_data_source();
     // Pass the selection since this source needs to know what to send:
-    data_source.as_ref().user_data().set(move || *selection);
+    data_source.as_ref().user_data().set(move || selection);
     data_source.quick_assign(handle_source_event);
 
     for (mime_type, _) in mime_types.borrow().iter() {
         data_source.offer(mime_type.clone());
     }
 
-    loop_data.take_selection(*selection, mime_types, &data_source); // Race condition??
+    loop_data.take_selection(selection, mime_types, &data_source); // Race condition??
 }
 
 fn handle_pipe_event(
@@ -96,7 +96,7 @@ fn handle_pipe_event(
     mime_type: &str,
     mime_types: &MimeTypes,
     loop_data: &mut LoopData,
-    selection: &Selection,
+    selection: Selection,
     data_offer_id: u32,
 ) -> Result<PostAction, std::io::Error> {
     // TODO: extract all the "read to Vec<u8>" logic into a reusable helper.
@@ -120,9 +120,8 @@ fn handle_pipe_event(
             Err(e) => {
                 if e.kind() == std::io::ErrorKind::WouldBlock {
                     return Ok(PostAction::Continue);
-                } else {
-                    return Err(e);
                 }
+                return Err(e);
             }
         };
 
@@ -156,7 +155,7 @@ fn handle_pipe_event(
         .iter()
         .any(|(_, value)| !*value.is_complete.borrow())
     {
-        if loop_data.is_selection_owned_by_client(*selection, data_offer_id) {
+        if loop_data.is_selection_owned_by_client(selection, data_offer_id) {
             create_data_source(loop_data, mime_types, selection);
         } else {
             println!(
@@ -214,7 +213,7 @@ pub fn read_offer(
 
         handle
             .insert_source(source, move |_event, reader, loop_data| {
-                handle_pipe_event(reader, &mime_type, &mime_types, loop_data, &selection, id)
+                handle_pipe_event(reader, &mime_type, &mime_types, loop_data, selection, id)
             })
             .expect("handler for pipe event is set");
 

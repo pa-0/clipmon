@@ -108,7 +108,7 @@ impl LoopData {
         }
     }
 
-    /// Indicates whether a data_source owns a selection.
+    /// Indicates whether a `data_source` owns a selection.
     fn is_selection_owned_by_client(&self, selection: Selection, id: u32) -> bool {
         let state = match selection {
             Selection::Primary => &self.primary,
@@ -149,12 +149,12 @@ impl LoopData {
     }
 }
 
-/// Handles events from the data_offer.
+/// Handles events from the `data_offer`.
 /// These events describe the data being offered by an owner of the clipboard.
 fn handle_data_offer_events(
     main: Main<ZwlrDataControlOfferV1>,
     ev: zwlr_data_control_offer_v1::Event,
-    _dispatch_data: DispatchData,
+    _: DispatchData,
 ) {
     match ev {
         zwlr_data_control_offer_v1::Event::Offer { mime_type } => {
@@ -192,7 +192,7 @@ fn handle_data_offer_events(
 
 // Handle a selection being taken by another client.
 fn handle_selection_taken(
-    id: Option<ZwlrDataControlOfferV1>,
+    id: &Option<ZwlrDataControlOfferV1>,
     selection: Selection,
     loop_data: &mut LoopData,
     handle: &LoopHandle<LoopData>,
@@ -226,11 +226,11 @@ fn handle_selection_taken(
     };
 }
 
-/// Handles events from the data_device.
+/// Handles events from the `data_device`.
 /// These events are basically new offers my clients that are taking ownership
 /// of the clipboard.
 fn handle_data_device_events(
-    data_device: Main<ZwlrDataControlDeviceV1>,
+    data_device: &Main<ZwlrDataControlDeviceV1>,
     ev: zwlr_data_control_device_v1::Event,
     loop_data: &mut LoopData,
     handle: &LoopHandle<LoopData>,
@@ -239,13 +239,13 @@ fn handle_data_device_events(
         zwlr_data_control_device_v1::Event::DataOffer { id: data_offer } => {
             // Maybe HashMap makes more sense and we can store the content?
             data_offer.as_ref().user_data().set(DataOffer::default);
-            data_offer.quick_assign(handle_data_offer_events)
+            data_offer.quick_assign(handle_data_offer_events);
         }
         zwlr_data_control_device_v1::Event::Selection { id } => {
-            handle_selection_taken(id, Selection::Clipboard, loop_data, handle);
+            handle_selection_taken(&id, Selection::Clipboard, loop_data, handle);
         }
         zwlr_data_control_device_v1::Event::PrimarySelection { id } => {
-            handle_selection_taken(id, Selection::Primary, loop_data, handle);
+            handle_selection_taken(&id, Selection::Primary, loop_data, handle);
         }
         zwlr_data_control_device_v1::Event::Finished => {
             data_device.destroy();
@@ -296,7 +296,7 @@ fn main() {
         let loop_data = data
             .get::<LoopData>()
             .expect("loop data is of type LoopData");
-        handle_data_device_events(data_device, event, loop_data, &handle)
+        handle_data_device_events(&data_device, event, loop_data, &handle);
     });
 
     // Send all pending messages to the compositor.
