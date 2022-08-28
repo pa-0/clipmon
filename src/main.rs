@@ -318,6 +318,8 @@ fn main() {
         .insert_source(notification_source, handle_notification_event)
         .expect("add notification handle to event loop");
 
+    // let (exec, sched) = calloop::futures::executor().expect("created executor for reading pipes");
+
     event_loop
         .run(
             std::time::Duration::from_millis(1),

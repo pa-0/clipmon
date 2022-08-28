@@ -107,6 +107,12 @@ fn handle_pipe_event(
         .get(mime_type)
         .expect("mime_types contains the read mime_type entry");
 
+    // TODO: read into bytes::buf::buf_impl
+    // It seems to be better designed for this.
+    //
+    // I would basically need to write to an array of array of bytes
+    // But when reading, return a Buf::chain()
+
     loop {
         let mut buf = [0; 32];
         let len = match reader.read(&mut buf) {
@@ -204,10 +210,14 @@ pub fn read_offer(
             .expect("can borrow selection from user_data");
         let id = data_offer.as_ref().id();
 
+        // TODO:  The Wayland objects can be cloned and captured into the futures that you send to the executor
+
         handle
             .insert_source(source, move |_event, reader, loop_data| {
                 handle_pipe_event(reader, &mime_type, &mime_types, loop_data, &selection, id)
             })
             .expect("handler for pipe event is set");
+
+        // XXX: Could also use my custom event source for this (event source handles the file-reading)
     }
 }
